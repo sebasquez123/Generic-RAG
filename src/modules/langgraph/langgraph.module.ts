@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
-import { LangchainRagGraphAdapter } from './adapters/langchain/langchain-rag-graph.adapter';
-import { RAG_GRAPH_ADAPTER } from './application/ports/langgraph.tokens';
-import { RagGraphOrchestratorService } from './application/services/rag-graph-orchestrator.service';
+import { LangchainSemanticGraphAdapter } from './adapters/langchain/langchain-semantic-graph.adapter';
+import { SEMANTIC_GRAPH_ADAPTER } from './application/ports/langgraph.tokens';
+import { SemanticGraphOrchestratorService } from './application/services/semantic-graph-orchestrator.service';
 
 @Module({
   providers: [
-    LangchainRagGraphAdapter,
-    RagGraphOrchestratorService,
+    LangchainSemanticGraphAdapter,
+    SemanticGraphOrchestratorService,
     {
-      provide: RAG_GRAPH_ADAPTER,
-      useExisting: LangchainRagGraphAdapter,
+      provide: SEMANTIC_GRAPH_ADAPTER,
+      useExisting: LangchainSemanticGraphAdapter,
     },
   ],
-  exports: [RagGraphOrchestratorService],
+  exports: [SemanticGraphOrchestratorService],
 })
 export class LanggraphModule {}

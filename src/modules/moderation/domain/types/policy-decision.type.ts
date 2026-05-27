@@ -1,6 +1,4 @@
-export type PolicyDecision = 'allow' | 'deny' | 'review';
-
-export interface PolicyCheckResult {
-  decision: PolicyDecision;
+export interface PolicyDecision {
+  allowed: boolean;
   reasons: string[];
 }

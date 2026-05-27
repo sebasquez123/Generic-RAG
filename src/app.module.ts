@@ -1,12 +1,27 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { DatabaseModule } from './modules/database/database.module';
-import { IngestionModule } from './modules/ingestion/ingestion.module';
+import { EmbeddingModule } from './modules/embedding/embedding.module';
+import { FormatterModule } from './modules/formatter/formatter.module';
+import { IngestionModule } from './modules/ingestion-api/ingestion.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
-import { RagModule } from './modules/RAG/rag.module';
+import { QueryModule } from './modules/query-api/query.module';
+import { RetrievalModule } from './modules/retrieval/retrieval.module';
+import { ScoringModule } from './modules/scoring/scoring.module';
+import { StorageModule } from './modules/storage/storage.module';
 import { UserContextMiddleware } from './shared/middleware/user-context/user-context.middleware';
 
 @Module({
-  imports: [DatabaseModule, IngestionModule, ModerationModule, RagModule],
+  imports: [
+    DatabaseModule,
+    EmbeddingModule,
+    FormatterModule,
+    IngestionModule,
+    ModerationModule,
+    QueryModule,
+    RetrievalModule,
+    ScoringModule,
+    StorageModule,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

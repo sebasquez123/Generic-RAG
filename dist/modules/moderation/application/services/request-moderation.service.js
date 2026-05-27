@@ -9,9 +9,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RequestModerationService = void 0;
 const common_1 = require("@nestjs/common");
 let RequestModerationService = class RequestModerationService {
-    inspectInput(input) {
-        void input;
-        return { decision: 'allow', reasons: [] };
+    evaluate() {
+        return {
+            allowed: true,
+            reasons: [],
+        };
     }
 };
 exports.RequestModerationService = RequestModerationService;

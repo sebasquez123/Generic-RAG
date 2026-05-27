@@ -5,9 +5,9 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
 interface LineupResponse {
-  activeModelAdapters: string[];
-  memoryModule: string;
-  graphModule: string;
+  ingestionModule: string;
+  embeddingModule: string;
+  storageModule: string;
 }
 
 describe('AppController (e2e)', () => {
@@ -23,16 +23,16 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/api/v1/rag/lineup (GET)', () => {
+  it('/api/v1/ingestion/lineup (GET)', () => {
     return request(app.getHttpServer())
-      .get('/api/v1/rag/lineup')
+      .get('/api/v1/ingestion/lineup')
       .expect(200)
       .expect((response) => {
         const body = response.body as LineupResponse;
 
-        expect(body.activeModelAdapters).toEqual(['gpt']);
-        expect(body.memoryModule).toBe('vector-memory/postgres-pgvector');
-        expect(body.graphModule).toBe('langgraph/langchain');
+        expect(body.ingestionModule).toBe('ingestion/text-and-pdf');
+        expect(body.embeddingModule).toBe('embedding/text-to-vector');
+        expect(body.storageModule).toBe('storage/postgres-pgvector');
       });
   });
 

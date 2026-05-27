@@ -39,6 +39,18 @@ let PgVectorConnectionService = class PgVectorConnectionService {
       `, [`%${question}%`, limit]);
         return result.rows;
     }
+    async storeDocumentChunks(chunks) {
+        if (!this.pool || chunks.length === 0) {
+            return false;
+        }
+        for (const chunk of chunks) {
+            await this.pool.query(`
+          insert into rag_documents (source, content, embedding)
+          values ($1, $2, $3::vector)
+        `, [chunk.source, chunk.content, `[${chunk.embedding.join(',')}]`]);
+        }
+        return true;
+    }
     async onModuleDestroy() {
         await this.pool?.end();
     }

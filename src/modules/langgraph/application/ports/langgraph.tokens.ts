@@ -1,1 +1,1 @@
-export const RAG_GRAPH_ADAPTER = Symbol('RAG_GRAPH_ADAPTER');
+export const SEMANTIC_GRAPH_ADAPTER = Symbol('SEMANTIC_GRAPH_ADAPTER');

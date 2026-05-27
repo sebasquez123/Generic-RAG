@@ -8,23 +8,23 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LanggraphModule = void 0;
 const common_1 = require("@nestjs/common");
-const langchain_rag_graph_adapter_1 = require("./adapters/langchain/langchain-rag-graph.adapter");
+const langchain_semantic_graph_adapter_1 = require("./adapters/langchain/langchain-semantic-graph.adapter");
 const langgraph_tokens_1 = require("./application/ports/langgraph.tokens");
-const rag_graph_orchestrator_service_1 = require("./application/services/rag-graph-orchestrator.service");
+const semantic_graph_orchestrator_service_1 = require("./application/services/semantic-graph-orchestrator.service");
 let LanggraphModule = class LanggraphModule {
 };
 exports.LanggraphModule = LanggraphModule;
 exports.LanggraphModule = LanggraphModule = __decorate([
     (0, common_1.Module)({
         providers: [
-            langchain_rag_graph_adapter_1.LangchainRagGraphAdapter,
-            rag_graph_orchestrator_service_1.RagGraphOrchestratorService,
+            langchain_semantic_graph_adapter_1.LangchainSemanticGraphAdapter,
+            semantic_graph_orchestrator_service_1.SemanticGraphOrchestratorService,
             {
-                provide: langgraph_tokens_1.RAG_GRAPH_ADAPTER,
-                useExisting: langchain_rag_graph_adapter_1.LangchainRagGraphAdapter,
+                provide: langgraph_tokens_1.SEMANTIC_GRAPH_ADAPTER,
+                useExisting: langchain_semantic_graph_adapter_1.LangchainSemanticGraphAdapter,
             },
         ],
-        exports: [rag_graph_orchestrator_service_1.RagGraphOrchestratorService],
+        exports: [semantic_graph_orchestrator_service_1.SemanticGraphOrchestratorService],
     })
 ], LanggraphModule);
 //# sourceMappingURL=langgraph.module.js.map

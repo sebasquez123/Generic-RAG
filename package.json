@@ -1,7 +1,7 @@
 {
   "name": "rag-multiagent-api",
   "version": "0.0.1",
-  "description": "Clean architecture NestJS API for multiagent RAG inference.",
+  "description": "Clean architecture NestJS API for semantic ingestion and retrieval.",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
