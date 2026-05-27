@@ -1,0 +1,1 @@
+{"version":3,"file":"global-storage.js","sourceRoot":"","sources":["../../../../src/shared/middleware/user-context/global-storage.ts"],"names":[],"mappings":";;;AAIA,MAAa,aAAa;IAChB,MAAM,CAAC,WAAW,GAAuB,EAAE,CAAC;IAEpD,MAAM,CAAC,cAAc,CAAC,OAA2B;QAC/C,IAAI,CAAC,WAAW,GAAG,OAAO,CAAC;IAC7B,CAAC;IAED,MAAM,CAAC,cAAc;QACnB,OAAO,IAAI,CAAC,WAAW,CAAC;IAC1B,CAAC;;AATH,sCAUC"}

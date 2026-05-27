@@ -1,0 +1,1 @@
+export const LLM_SERVICE_ADAPTERS = Symbol('LLM_SERVICE_ADAPTERS');
