@@ -12,7 +12,6 @@ const database_module_1 = require("./modules/database/database.module");
 const embedding_module_1 = require("./modules/embedding/embedding.module");
 const formatter_module_1 = require("./modules/formatter/formatter.module");
 const ingestion_module_1 = require("./modules/ingestion-api/ingestion.module");
-const moderation_module_1 = require("./modules/moderation/moderation.module");
 const query_module_1 = require("./modules/query-api/query.module");
 const retrieval_module_1 = require("./modules/retrieval/retrieval.module");
 const scoring_module_1 = require("./modules/scoring/scoring.module");
@@ -31,7 +30,6 @@ exports.AppModule = AppModule = __decorate([
             embedding_module_1.EmbeddingModule,
             formatter_module_1.FormatterModule,
             ingestion_module_1.IngestionModule,
-            moderation_module_1.ModerationModule,
             query_module_1.QueryModule,
             retrieval_module_1.RetrievalModule,
             scoring_module_1.ScoringModule,
