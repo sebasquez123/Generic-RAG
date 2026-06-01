@@ -1,0 +1,62 @@
+version: '3.7'
+
+services:
+  db:
+    container_name: phit_db
+    image: postgres:15.4-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: phit_user
+      POSTGRES_DB: phit-local
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    ports:
+      - 9532:5432
+    networks:
+      - phit
+
+  # API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3030:3030"
+    environment:
+      - NODE_ENV=development
+      - APP_ENV=local
+      - APP_PORT=3030
+      - APP_VERSION=latest
+      - APP_API_URL=http://localhost:3030
+      - APP_URL=http://localhost:3000
+      - DB_URL=postgres://phit_user:${DB_PASSWORD:-password}@db:5432/phit-local
+      - LOG_LEVEL=trace
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - phit
+
+  # Cloud SQL Auth Proxy (commented by default)
+  # Uncomment and set CLOUD_SQL_CONNECTION_NAME to use
+  # cloud-sql-proxy:
+  #   image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
+  #   command:
+  #     - "--port=5432"
+  #     - "--credentials-file=/secrets/service-account.json"
+  #     - "${CLOUD_SQL_CONNECTION_NAME}"
+  #   environment:
+  #     - GOOGLE_APPLICATION_CREDENTIALS=/secrets/service-account.json
+  #   volumes:
+  #     - ${GOOGLE_APPLICATION_CREDENTIALS:-./service-account.json}:/secrets/service-account.json
+  #   ports:
+  #     - "5432:5432"
+  #   restart: always
+  #   networks:
+  #     - phit
+
+networks:
+  phit:
+    name: phit
+    driver: bridge

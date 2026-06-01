@@ -7,7 +7,7 @@ import { QueryModule } from './modules/query-api/query.module';
 import { RetrievalModule } from './modules/retrieval/retrieval.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { StorageModule } from './modules/storage/storage.module';
-import { UserContextMiddleware } from './shared/middleware/user-context/user-context.middleware';
+import { UserContextMiddleware } from './shared/middleware/context/req-context.middleware';
 
 @Module({
   imports: [
