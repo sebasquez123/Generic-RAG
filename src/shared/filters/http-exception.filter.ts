@@ -1,16 +1,13 @@
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Catch, HttpException, HttpStatus } from '@nestjs/common';
 import type { HttpArgumentsHost } from '@nestjs/common/interfaces';
-import type { GqlContextType, GqlExceptionFilter } from '@nestjs/graphql';
-import { GqlArgumentsHost } from '@nestjs/graphql';
 import type { Response } from 'express';
 
 @Catch()
-export class HttpExceptionFilter implements ExceptionFilter, GqlExceptionFilter {
+export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: Error, host: ArgumentsHost) {
-    const context = host.getType<GqlContextType>();
+    const context = host.getType();
     if (context === 'http') return this.catchHttp(exception, host.switchToHttp());
-    if (context === 'graphql') return this.catchGraphql(exception, GqlArgumentsHost.create(host));
     throw new Error(`Unknown context type: ${context}`);
   }
 
@@ -24,9 +21,5 @@ export class HttpExceptionFilter implements ExceptionFilter, GqlExceptionFilter 
     return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       message: error.message || 'Internal server error',
     });
-  }
-
-  private catchGraphql(error: Error, _context: GqlArgumentsHost) {
-    return error;
   }
 }

@@ -1,43 +1,65 @@
-// import type { Logger, QueryRunner } from 'typeorm';
 
-// import logger from '~/logger';
+import  { logger, PGLogger, DbLogLimits} from './config';
+export class QueryLogger implements PGLogger {
+  logQueryLimits(edgepoint: DbLogLimits, query: string, parameters?: unknown[]) {
+    logger.trace({ query, parameters }, edgepoint);
+  }
 
-// export class QueryLogger implements Logger {
-//   logQuery(query: string, parameters?: unknown[], _queryRunner?: QueryRunner) {
-//     logger.trace({ query, parameters }, 'New DB query');
-//   }
+  logVectorSearch(query: string, vector: number[], limit: number, similarity: 'cosine' | 'euclidean' | 'inner') {
+    logger.trace(
+      { query, vectorDimension: vector.length, limit, similarity },
+      'Vector similarity search'
+    );
+  }
 
-//   logQueryError(error: string | Error, query: string, parameters?: unknown[], _queryRunner?: QueryRunner) {
-//     if (error instanceof Error) {
-//       logger.warn({ error, query, parameters }, 'Errored DB query');
-//     } else {
-//       logger.warn({ errorMessage: error, query, parameters }, 'Errored DB query');
-//     }
-//   }
+  logVectorDimensionMismatch(expected: number, actual: number, embedding: string) {
+    logger.error(
+      { expected, actual, embedding },
+      'Vector dimension mismatch - embedding cannot be stored'
+    );
+  }
 
-//   logQuerySlow(time: number, query: string, parameters?: unknown[], _queryRunner?: QueryRunner) {
-//     logger.warn({ query, parameters, time }, 'Slow DB query');
-//   }
+  logBatchEmbeddingInsert(count: number, totalDimensions: number, query: string) {
+    logger.debug(
+      { count, totalDimensions, query },
+      `Batch insert: ${count} embeddings`
+    );
+  }
 
-//   logSchemaBuild(message: string, queryRunner?: QueryRunner) {
-//     logger.trace(message, queryRunner);
-//   }
+  logSlowVectorOperation(time: number, query: string, operationType: 'search' | 'insert' | 'index') {
+    logger.warn(
+      { time, operationType, query },
+      `Slow vector operation (${time}ms) - consider adding indices`
+    );
+  }
 
-//   logMigration(message: string, queryRunner?: QueryRunner) {
-//     logger.info(message, queryRunner);
-//   }
 
-//   log(level: 'log' | 'info' | 'warn', message: unknown, _queryRunner?: QueryRunner) {
-//     switch (level) {
-//       case 'log':
-//       case 'info': {
-//         logger.trace({ typeOrmMessage: message, level }, 'DB log');
-//         break;
-//       }
-//       case 'warn': {
-//         logger.warn({ typeOrmMessage: message }, 'DB warn');
-//         break;
-//       }
-//     }
-//   }
-// }
+  logEmbeddingRetrieval(count: number, threshold?: number, query?: string) {
+    logger.trace(
+      { count, threshold, query },
+      `Retrieved ${count} embeddings${threshold ? ` above similarity ${threshold}` : ''}`
+    );
+  }
+
+
+  logUnexpectedQueryError (error: string | Error, query: string, parameters?: unknown[]) {
+    if (error instanceof Error) {
+      logger.warn({ error, query, parameters }, 'Errored DB query');
+    } else {
+      logger.warn({ errorMessage: error, query, parameters }, 'Errored DB query');
+    }
+  }
+
+  logVectorOperationError(error: Error, operationType: 'search' | 'insert' | 'index', query: string, vector?: number[]) {
+    logger.error(
+      { 
+        error: error.message, 
+        operationType, 
+        query,
+        vectorDimension: vector?.length,
+        stack: error.stack 
+      },
+      `Vector operation error: ${operationType}`
+    );
+  }
+}
