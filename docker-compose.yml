@@ -1,62 +1,67 @@
-version: '3.7'
+version: '3.9'
 
 services:
+  # PostgreSQL with pgvector extension
   db:
-    container_name: phit_db
-    image: postgres:15.4-alpine
+    container_name: genrag_pgvector_db
+    image: pgvector/pgvector:pg15-latest
     restart: always
     environment:
-      POSTGRES_USER: phit_user
-      POSTGRES_DB: phit-local
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=vector"
     ports:
-      - 9532:5432
+      - "9532:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - phit
+      - genrag_network
 
-  # API service
+  # NestJS API Service
   api:
+    container_name: genrag_api
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
-      - "3030:3030"
+      - "${APP_PORT}:${APP_PORT}"
     environment:
-      - NODE_ENV=development
-      - APP_ENV=local
-      - APP_PORT=3030
-      - APP_VERSION=latest
-      - APP_API_URL=http://localhost:3030
-      - APP_URL=http://localhost:3000
-      - DB_URL=postgres://phit_user:${DB_PASSWORD:-password}@db:5432/phit-local
-      - LOG_LEVEL=trace
+      - NODE_ENV=${NODE_ENV}
+      - APP_ENV=${APP_ENV}
+      - APP_PORT=${APP_PORT}
+      - APP_VERSION=${APP_VERSION}
+      - APP_API_URL=${APP_API_URL}
+      - APP_URL=${APP_URL}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - .:/app
       - /app/node_modules
     networks:
-      - phit
+      - genrag_network
 
-  # Cloud SQL Auth Proxy (commented by default)
-  # Uncomment and set CLOUD_SQL_CONNECTION_NAME to use
-  # cloud-sql-proxy:
-  #   image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
-  #   command:
-  #     - "--port=5432"
-  #     - "--credentials-file=/secrets/service-account.json"
-  #     - "${CLOUD_SQL_CONNECTION_NAME}"
-  #   environment:
-  #     - GOOGLE_APPLICATION_CREDENTIALS=/secrets/service-account.json
-  #   volumes:
-  #     - ${GOOGLE_APPLICATION_CREDENTIALS:-./service-account.json}:/secrets/service-account.json
-  #   ports:
-  #     - "5432:5432"
-  #   restart: always
-  #   networks:
-  #     - phit
+volumes:
+  postgres_data:
+    driver: local
 
 networks:
-  phit:
-    name: phit
+  genrag_network:
+    name: genrag_network
     driver: bridge

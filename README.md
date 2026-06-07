@@ -43,6 +43,67 @@ Current retrieval example:
 }
 ```
 
+## Getting Started
+
+### Prerequisites
+- Docker & Docker Compose
+- Node.js 18+
+- npm
+
+### Environment Setup
+
+1. **Copy environment file**:
+```bash
+cp .env.example .env
+```
+
+2. **Edit `.env`** with your configuration:
+```bash
+DB_PASSWORD=your_secure_password_here
+OPENAI_API_KEY=sk-your-key
+GEMINI_API_KEY=your-key
+```
+
+### Running with Docker
+
+**Start all services** (PostgreSQL + pgvector + API):
+```bash
+docker-compose up -d
+```
+
+**View logs**:
+```bash
+docker-compose logs -f api        # API logs
+docker-compose logs -f db         # Database logs
+docker-compose logs -f            # All logs
+```
+
+**Stop all services**:
+```bash
+docker-compose down
+```
+
+**Stop and remove volumes** (clean database):
+```bash
+docker-compose down -v
+```
+
+### Development Server
+
+**Without Docker** (requires local PostgreSQL + pgvector):
+```bash
+npm run dev
+```
+
+**API runs at**: `http://localhost:3030`
+
+### Database Connection
+
+- **Host**: `localhost:9532` (or `db:5432` inside Docker)
+- **User**: `phit_user`
+- **Database**: `phit-local`
+- **Password**: Value from `.env` `DB_PASSWORD`
+
 ## MVP Scope
 
 The first useful version should do only this:
