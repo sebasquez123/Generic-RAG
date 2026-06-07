@@ -1,74 +1,77 @@
 import type { CallHandler, ExecutionContext, NestInterceptor } from '@nestjs/common';
 import { HttpException } from '@nestjs/common';
-import type { GqlContextType } from '@nestjs/graphql';
-import { GqlArgumentsHost } from '@nestjs/graphql';
 import type { Request, Response } from 'express';
-import type { GraphQLResolveInfo } from 'graphql';
-import { GraphQLError } from 'graphql/error';
 import type { Level } from 'pino';
 import type { Observable } from 'rxjs';
 import { throwError } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { catchError, tap, timeout } from 'rxjs/operators';
 
-import logger from '~/logger';
-import { getAsyncLocalStorageContext, getDurationFromStart, setAsyncLocalStorageContextForHttpRequest } from '~/shared/async-local-storage-context';
+import { LoggerService } from '~/shared/logging/main.logger';
+import { getTemporaryContext, setTemporaryContext, getDurationTilNow } from '~/shared/middleware/context/global-context';
 
-const notLogEndpoints = new Set(['/startup-probe', '/liveness-probe']);
+const excludedEndpoints = new Set(['/startup-probe', '/liveness-probe']);
 
+const logger = new LoggerService('LoggingInterceptor');
+
+interface reqParams {
+  method: string;
+  url: string;
+  route: string;
+  remoteIp: string;
+  domain?: string;
+}
+
+const requestStartingLogTemplate = (reqParams :reqParams, duration: number) : string => {
+   return `Request processing\n From:\n IP: ${reqParams.remoteIp}\n Domain:${reqParams.domain?? 'Unknown'}\n Server:\n Method: ${reqParams.method}\n URL: ${reqParams.url}\n Route: ${reqParams.route}\n Duration: ${duration} seconds`;
+};
+const requestFinalLogTemplate = (duration: number): string => {
+  return `Request finished\n Duration: ${duration} seconds `;
+}
+const requestErrorLogTemplate = (reqParams: reqParams, duration: number, error: unknown): string => {
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  return `Request error\n From:\n IP: ${reqParams.remoteIp}\n Domain:${reqParams.domain?? 'Unknown'}\n Server:\n Method: ${reqParams.method}\n URL: ${reqParams.url}\n Route: ${reqParams.route}\n Duration: ${duration} seconds\n Error details: ${message}`;
+}
 export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const type = context.getType<GqlContextType>();
-    const parameters: Record<string, unknown> = { type };
 
-    if (type === 'http') {
-      const request = context.switchToHttp().getRequest<Request>();
-      if (notLogEndpoints.has(request.url)) return next.handle();
+    const parameters: reqParams = { method: '', url: '', route: '', remoteIp: '', domain: '' };
 
-      let localStorageContext = getAsyncLocalStorageContext();
-      if (!localStorageContext) {
-        localStorageContext = setAsyncLocalStorageContextForHttpRequest(request);
-      }
+    const request = context.switchToHttp().getRequest<Request>();
+      if (excludedEndpoints.has(request.url)) return next.handle();
+
+      let localStorageContext = getTemporaryContext();
       const response = context.switchToHttp().getResponse<Response>();
-      response.set('X-Request-Id', localStorageContext.traceId);
+
+      if (!localStorageContext) {
+        localStorageContext = setTemporaryContext(request);
+        response.set('X-Request-Id', localStorageContext.traceId);
+      }
+
 
       const handler = context.getHandler();
       const controller = context.getClass();
+
       const route = `${controller.name}.${handler.name}`;
       localStorageContext.route = route;
 
       parameters['method'] = request.method;
       parameters['url'] = request.url;
       parameters['route'] = route;
-    }
+      parameters['remoteIp'] = localStorageContext.httpRequest.remoteIp;
+      parameters['domain'] = localStorageContext.httpRequest.domain;
 
-    if (type === 'graphql') {
-      const gqlHost = GqlArgumentsHost.create(context);
 
-      const info = gqlHost.getInfo<GraphQLResolveInfo>();
-      parameters['type'] = info.parentType;
-      parameters['field'] = info.fieldName;
-      parameters['variables'] = info.variableValues;
-    }
-    logger.debug(parameters, `Request processing started`);
+    logger.debug(requestStartingLogTemplate(parameters, getDurationTilNow()));
+
     return next.handle().pipe(
+      tap(() => {
+        logger.debug(requestFinalLogTemplate(getDurationTilNow()));
+      }),
+      timeout(30000),
       catchError((error: unknown) => {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        if (error instanceof HttpException) {
-          const status = error.getStatus();
-          const level: Level = 500 <= status && status <= 599 ? 'error' : 'debug';
-          logger[level]({ ...parameters, duration: getDurationFromStart(), error }, message);
-          return throwError(() => error);
-        }
-        if (error instanceof GraphQLError) {
-          logger.debug({ ...parameters, duration: getDurationFromStart(), error }, message);
-          return throwError(() => error);
-        }
-        logger.error({ ...parameters, duration: getDurationFromStart(), error }, message);
+        logger.error(requestErrorLogTemplate(parameters, getDurationTilNow(), error));
         return throwError(() => error);
       }),
-      tap(() => {
-        logger.debug({ ...parameters, duration: getDurationFromStart() }, `Request finished`);
-      })
     );
   }
 }

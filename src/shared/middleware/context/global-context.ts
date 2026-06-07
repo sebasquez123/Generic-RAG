@@ -28,7 +28,7 @@ export function getTemporaryContext(): TemporaryContext | undefined {
   return asyncLocalStorage.getStore();
 }
 
-export function getDurationFromStart(): number {
+export function getDurationTilNow(): number {
   const diff = process.hrtime(getTemporaryContext()?.startTime);
   return +(diff[0] + diff[1] * 1e-9).toFixed(6);
 }

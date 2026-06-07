@@ -39,7 +39,7 @@ export class AuthMiddleware implements NestMiddleware {
     }
     context.contract = data;
 
-    logger.log(`New request started`);
+    logger.log(`New request gets over Auth`);
     next();
   }
 
