@@ -1,8 +1,6 @@
-import { z } from 'zod';
+import z from 'zod';
 
 export const ingestTextSchema = z.object({
-  source: z.string().trim().min(1),
-  content: z.string().trim().min(1),
+  source: z.string().trim().min(1, 'source is required'),
+  content: z.string().trim().min(1, 'content is required')
 });
-
-export type IngestTextInput = z.infer<typeof ingestTextSchema>;

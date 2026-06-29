@@ -5,15 +5,17 @@ import type { Request } from 'express';
 import { generateRandomString } from '~/shared/helpers/create_random_string';
 import { TemporaryContext } from './types/context.types';
 
-
 const asyncLocalStorage = new AsyncLocalStorage<TemporaryContext>();
 
 export function setTemporaryContext(request: Request): TemporaryContext {
   const context: TemporaryContext = {
-    traceId: request.header('X-Cloud-Trace-Context')?.split('/')[0] ?? generateRandomString(32),
+    traceId:
+      request.header('X-Cloud-Trace-Context')?.split('/')[0] ??
+      generateRandomString(32),
     startTime: process.hrtime(),
     httpRequest: {
-      remoteIp: request.header('x-forwarded-for') ?? request.socket.remoteAddress ?? '',
+      remoteIp:
+        request.header('x-forwarded-for') ?? request.socket.remoteAddress ?? '',
       referer: request.header('referer'),
       userAgent: request.header('user-agent'),
       domain: request.hostname,

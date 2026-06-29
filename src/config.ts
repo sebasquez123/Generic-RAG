@@ -6,9 +6,13 @@ import type { Level } from 'pino';
 
 config({ path: path.join(__dirname, '..', '.env') });
 
-const exampleEnv = parse(readFileSync(path.join(__dirname, '..', '.env.example'), 'utf-8'));
+const exampleEnv = parse(
+  readFileSync(path.join(__dirname, '..', '.env.example'), 'utf-8'),
+);
 
-const missedEnvironmentVariables = Object.keys(exampleEnv).filter((exampleKey) => !process.env[exampleKey]);
+const missedEnvironmentVariables = Object.keys(exampleEnv).filter(
+  (exampleKey) => !process.env[exampleKey],
+);
 if (missedEnvironmentVariables.length > 0)
   throw new Error(`${missedEnvironmentVariables.join(', ')} not configured`);
 
@@ -34,5 +38,5 @@ export default {
   },
   agent: {
     artifact: process.env['ARTIFACT']!,
-  }
+  },
 } as const;

@@ -1,12 +1,12 @@
-import { 
-  HttpException,
-  HttpExceptionOptions, 
-  NotFoundException,  
-  NotImplementedException, 
-  InternalServerErrorException, 
+import {
+  HttpExceptionOptions,
+  NotFoundException,
+  NotImplementedException,
+  InternalServerErrorException,
   PreconditionFailedException,
   BadGatewayException,
-  BadRequestException } from '@nestjs/common';
+  BadRequestException,
+} from '@nestjs/common';
 
 export enum ErrorReasonEnum {
   FORBIDDEN = 'FORBIDDEN',
@@ -19,7 +19,11 @@ export enum ErrorReasonEnum {
 }
 
 export class NotFoundError extends NotFoundException {
-  constructor(message: string,dependency: string, options?: HttpExceptionOptions) {
+  constructor(
+    message: string,
+    dependency: string,
+    options?: HttpExceptionOptions,
+  ) {
     options = options ?? {};
     options.cause = ErrorReasonEnum.NOT_FOUND;
     if (dependency) options.description = `Error aligned with ${dependency}`;
@@ -28,7 +32,11 @@ export class NotFoundError extends NotFoundException {
 }
 
 export class NotImplementedError extends NotImplementedException {
-  constructor(message: string, dependency?: string, options?: HttpExceptionOptions) {
+  constructor(
+    message: string,
+    dependency?: string,
+    options?: HttpExceptionOptions,
+  ) {
     options = options ?? {};
     options.cause = ErrorReasonEnum.NOT_IMPLEMENTED;
     if (dependency) options.description = `Error aligned with ${dependency}`;
@@ -37,7 +45,11 @@ export class NotImplementedError extends NotImplementedException {
 }
 
 export class InternalServerError extends InternalServerErrorException {
-  constructor(message: string, dependency?: string, options?: HttpExceptionOptions) {
+  constructor(
+    message: string,
+    dependency?: string,
+    options?: HttpExceptionOptions,
+  ) {
     options = options ?? {};
     options.cause = ErrorReasonEnum.INTERNAL_SERVER_ERROR;
     if (dependency) options.description = `Error aligned with ${dependency}`;
@@ -46,7 +58,11 @@ export class InternalServerError extends InternalServerErrorException {
 }
 
 export class PreconditionFailedError extends PreconditionFailedException {
-  constructor(message: string, dependency?: string, options?: HttpExceptionOptions) {
+  constructor(
+    message: string,
+    dependency?: string,
+    options?: HttpExceptionOptions,
+  ) {
     options = options ?? {};
     options.cause = ErrorReasonEnum.PRECONDITION_FAILED;
     if (dependency) options.description = `Error aligned with ${dependency}`;
@@ -54,7 +70,11 @@ export class PreconditionFailedError extends PreconditionFailedException {
   }
 }
 export class BadGatewayError extends BadGatewayException {
-  constructor(message: string, dependency?: string, options?: HttpExceptionOptions) {
+  constructor(
+    message: string,
+    dependency?: string,
+    options?: HttpExceptionOptions,
+  ) {
     options = options ?? {};
     options.cause = ErrorReasonEnum.GATEWAY_ERROR;
     if (dependency) options.description = `Error aligned with ${dependency}`;
@@ -63,7 +83,11 @@ export class BadGatewayError extends BadGatewayException {
 }
 
 export class BadRequestError extends BadRequestException {
-  constructor(message: string,dependency?: string, options?: HttpExceptionOptions) {
+  constructor(
+    message: string,
+    dependency?: string,
+    options?: HttpExceptionOptions,
+  ) {
     options = options ?? {};
     options.cause = ErrorReasonEnum.BAD_REQUEST;
     if (dependency) options.description = `Error aligned with ${dependency}`;

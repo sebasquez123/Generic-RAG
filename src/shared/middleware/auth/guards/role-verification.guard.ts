@@ -18,27 +18,41 @@ export class RoleVerificationGuard implements CanActivate {
 
     const globalContext = getTemporaryContext();
 
-    const isPublic = this.reflector.getAllAndOverride<boolean>(isPublicSymbol, [controller, handler]);
+    const isPublic = this.reflector.getAllAndOverride<boolean>(isPublicSymbol, [
+      controller,
+      handler,
+    ]);
 
     if (isPublic) {
-      logger.warn(`Public route accessed by bot: ${globalContext?.botInfo?.id} on quality of ${globalContext?.contract?.role}, skipping role verification`);
+      logger.warn(
+        `Public route accessed by bot: ${globalContext?.botInfo?.id} on quality of ${globalContext?.contract?.role}, skipping role verification`,
+      );
       return true;
     }
 
-    const roleBenchmark = this.reflector.getAllAndOverride<Role>(roleSymbol, [controller, handler]);
-    if(roleBenchmark === undefined) {
-      logger.warn(`No role metadata found for route ${globalContext?.route}, skipping role verification`);
+    const roleBenchmark = this.reflector.getAllAndOverride<Role>(roleSymbol, [
+      controller,
+      handler,
+    ]);
+    if (roleBenchmark === undefined) {
+      logger.warn(
+        `No role metadata found for route ${globalContext?.route}, skipping role verification`,
+      );
       return false;
     }
     const botRole = globalContext?.contract?.role;
     const requiredRole = roleBenchmark.valueOf();
 
     if (!requiredRole || botRole !== requiredRole) {
-      logger.warn(`Bot ${globalContext?.botInfo?.id} with role ${botRole} tried to access a route requiring role ${requiredRole}`);
+      logger.warn(
+        `Bot ${globalContext?.botInfo?.id} with role ${botRole} tried to access a route requiring role ${requiredRole}`,
+      );
       return false;
     }
 
-    logger.log(`Bot ${globalContext?.botInfo?.id} with role ${botRole} successfully accessed a route requiring role ${requiredRole}`);
+    logger.log(
+      `Bot ${globalContext?.botInfo?.id} with role ${botRole} successfully accessed a route requiring role ${requiredRole}`,
+    );
 
     return true;
   }

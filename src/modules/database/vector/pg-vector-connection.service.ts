@@ -29,7 +29,7 @@ export class PgVectorConnectionService implements OnModuleDestroy {
       return [];
     }
 
-    const result = await this.pool.query<RetrievedContext>(
+    const result = await this.pool.query(
       `
         select
           id::text,
@@ -43,7 +43,7 @@ export class PgVectorConnectionService implements OnModuleDestroy {
       [`%${question}%`, limit],
     );
 
-    return result.rows;
+    return result.rows as RetrievedContext[];
   }
 
   async storeDocumentChunks(chunks: EmbeddedDocumentChunk[]): Promise<boolean> {
@@ -56,10 +56,15 @@ export class PgVectorConnectionService implements OnModuleDestroy {
     for (const chunk of chunks) {
       await this.pool.query(
         `
-          insert into rag_documents (source, content, embedding)
-          values ($1, $2, $3::vector)
+          insert into rag_documents (source, content, embedding, metadata)
+          values ($1, $2, $3::vector, $4::jsonb)
         `,
-        [chunk.source, chunk.content, `[${chunk.embedding.join(',')}]`],
+        [
+          chunk.source,
+          chunk.content,
+          `[${chunk.embedding.join(',')}]`,
+          JSON.stringify(chunk.metadata ?? {}),
+        ],
       );
     }
 

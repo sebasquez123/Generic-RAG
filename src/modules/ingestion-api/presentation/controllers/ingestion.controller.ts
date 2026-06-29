@@ -1,107 +1,99 @@
-import { BadRequestException, Body, Controller, Post, UploadedFile } from '@nestjs/common';
 import {
-  ApiOperation,
-  ApiResponse,
-  ApiBody,
-  ApiBearerAuth,
-  ApiTags,
-} from '@nestjs/swagger';
+  BadRequestException,
+  Body,
+  Controller,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiOperation, ApiResponse, ApiTags, ApiConsumes } from '@nestjs/swagger';
 import { DocumentIngestionService } from '../../application/orchestrator.service';
 import type { IngestTextDto } from '../dto/ingest-text.dto';
+import type { IngestStructuredDto } from '../dto/ingest-structured.dto';
+import type { IngestPdfDto } from '../dto/ingest-pdf.dto';
 import { ingestTextSchema } from '../validators/ingest-text.schema';
+import { ingestStructuredSchema } from '../validators/ingest-structured.schema';
+import { ingestPdfSchema } from '../validators/ingest-pdf.schema';
+import { LoggerService } from '~/shared/logging/main.logger';
+import { sourceType } from '~/shared/types/semantic-pipeline.type';
+import { InternalServerError } from '~/shared/errors';
 
-@ApiTags('AI Chat')
+@ApiTags('Ingestion')
 @Controller('ingestion')
-@ApiBearerAuth('access-token')
 export class IngestionController {
-  private readonly logger = new LoggerService();
+  private readonly logger = new LoggerService('IngestionController');
   constructor(private readonly documentIngestion: DocumentIngestionService) {}
 
-  @ApiOperation({ summary: 'Send message to AI chat' })
-  @ApiBody({
-    type: ChatRequestDto,
-    description: 'Chat message request',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'AI response generated successfully',
-    type: ChatResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid request format',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - invalid API key',
-  })
-  @ApiResponse({
-    status: 429,
-    description: 'Rate limit exceeded',
-  })
-  @ApiResponse({
-    status: 503,
-    description: 'Chat service unavailable',
-  })
-  @Post('structured')
+  @ApiOperation({ summary: 'Ingest plain text content' })
+  @ApiResponse({ status: 201, description: 'Document ingested (text)' })
+  @ApiResponse({ status: 400, description: 'Invalid request format' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @Post('text')
   ingestText(@Body() body: IngestTextDto) {
-    // MVP next endpoints: POST /ingestion/pdf for uploaded PDFs and
-    // POST /ingestion/structured for caller-defined JSON shapes.
-    const parsed = ingestTextSchema.safeParse(body);
+    try{
+      const parsed = ingestTextSchema.safeParse(body);
 
-    if (!parsed.success) {
-      throw new BadRequestException(parsed.error.flatten());
+      if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+
+      return this.documentIngestion.ingest(sourceType.Text, parsed.data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error('Error ingesting text data', errorMessage);
+      throw new InternalServerError('Failed to ingest text data');
     }
-
-    return this.documentIngestion.ingestText(parsed.data);
+    
   }
 
 
-  @ApiOperation({ summary: 'Send message to AI chat' })
-  @ApiBody({
-    type: ChatRequestDto,
-    description: 'Chat message request',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'AI response generated successfully',
-    type: ChatResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid request format',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - invalid API key',
-  })
-  @ApiResponse({
-    status: 429,
-    description: 'Rate limit exceeded',
-  })
-  @ApiResponse({
-    status: 503,
-    description: 'Chat service unavailable',
-  })
+  @ApiOperation({ summary: 'Ingest structured JSON data' })
+  @ApiResponse({ status: 201, description: 'Document ingested (structured)' })
+  @ApiResponse({ status: 400, description: 'Invalid request format' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @Post('structured')
+  ingestStructured(@Body() body: IngestStructuredDto) {
+    try{
+      const parsed = ingestStructuredSchema.safeParse(body);
+
+      if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+
+      return this.documentIngestion.ingest(sourceType.Structured, parsed.data);
+     } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error('Error ingesting structured data', errorMessage);
+      throw new InternalServerError('Failed to ingest structured data');
+    }
+  }
+
+
+  @ApiOperation({ summary: 'Ingest PDF (multipart/form-data upload)' })
+  @ApiResponse({ status: 201, description: 'Document ingested (pdf)' })
+  @ApiResponse({ status: 400, description: 'Invalid request format' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiConsumes('multipart/form-data')
   @Post('pdf')
   @UseInterceptors(FileInterceptor('file'))
   ingestPdf(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: IngestTextDto ) {
-    this.logger.log({
+    @UploadedFile() file,
+    @Body() body: IngestPdfDto,
+  ) {
+    try {
+    this.logger.log(JSON.stringify({
       message: 'Received PDF ingestion request',
-      fileName: file.originalname,
-      fileSize: file.size,
+      fileName: file?.originalname,
+      fileSize: file?.size,
       body,
-    });
-    const buffer: Buffer = file.buffer;
-    const 
-    const parsed = ingestTextSchema.safeParse(body);
+    }));
 
-    if (!parsed.success) {
-      throw new BadRequestException(parsed.error.flatten());
-    }
+    const parsed = ingestPdfSchema.safeParse({ source: body?.source, file });
 
-    return this.documentIngestion.ingestText(parsed.data);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+
+    return this.documentIngestion.ingest(sourceType.Pdf, parsed.data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error('Error ingesting PDF', errorMessage);
+      throw new InternalServerError('Failed to ingest PDF');
   }
+}
 }
