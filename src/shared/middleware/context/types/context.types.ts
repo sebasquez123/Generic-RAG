@@ -1,4 +1,3 @@
-
 export enum Role {
   scrapper = 'scrapper',
   analyst = 'analyst',

@@ -10,11 +10,13 @@ export class FormatterService {
   // They should produce the same chunk shape so embedding/storage stay simple.
   formatIngestionResult(input: {
     source: string;
+    kind: IngestionResult['kind'];
     embeddedChunks: EmbeddedDocumentChunk[];
     stored: boolean;
   }): IngestionResult {
     return {
       source: input.source,
+      kind: input.kind,
       chunkCount: input.embeddedChunks.length,
       embeddedChunks: input.embeddedChunks,
       stored: input.stored,

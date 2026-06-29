@@ -49,7 +49,10 @@ export class HttpClientService {
       }
 
       if (error.config?.headers) {
-        errorDetails.requestHeaders = error.config.headers as Record<string, unknown>;
+        errorDetails.requestHeaders = error.config.headers as Record<
+          string,
+          unknown
+        >;
       }
 
       logger.error(errorDetails, 'HTTP request failed');
@@ -67,7 +70,9 @@ export class HttpClientService {
   async get<T>(url: string, config?: HttpClientConfig): Promise<T> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<T>(url, this.buildAxiosConfig(config)).pipe(catchError((error) => this.handleAxiosError(error)))
+        this.httpService
+          .get<T>(url, this.buildAxiosConfig(config))
+          .pipe(catchError((error) => this.handleAxiosError(error))),
       );
       return response.data;
     } catch (error: unknown) {
@@ -75,10 +80,16 @@ export class HttpClientService {
     }
   }
 
-  async post<T>(url: string, data: unknown, config?: HttpClientConfig): Promise<T> {
+  async post<T>(
+    url: string,
+    data: unknown,
+    config?: HttpClientConfig,
+  ): Promise<T> {
     try {
       const response = await firstValueFrom(
-        this.httpService.post<T>(url, data, this.buildAxiosConfig(config)).pipe(catchError((error) => this.handleAxiosError(error)))
+        this.httpService
+          .post<T>(url, data, this.buildAxiosConfig(config))
+          .pipe(catchError((error) => this.handleAxiosError(error))),
       );
       return response.data;
     } catch (error: unknown) {
@@ -86,10 +97,16 @@ export class HttpClientService {
     }
   }
 
-  async put<T>(url: string, data: unknown, config?: HttpClientConfig): Promise<T> {
+  async put<T>(
+    url: string,
+    data: unknown,
+    config?: HttpClientConfig,
+  ): Promise<T> {
     try {
       const response = await firstValueFrom(
-        this.httpService.put<T>(url, data, this.buildAxiosConfig(config)).pipe(catchError((error) => this.handleAxiosError(error)))
+        this.httpService
+          .put<T>(url, data, this.buildAxiosConfig(config))
+          .pipe(catchError((error) => this.handleAxiosError(error))),
       );
       return response.data;
     } catch (error: unknown) {
@@ -97,10 +114,16 @@ export class HttpClientService {
     }
   }
 
-  async patch<T>(url: string, data: unknown, config?: HttpClientConfig): Promise<T> {
+  async patch<T>(
+    url: string,
+    data: unknown,
+    config?: HttpClientConfig,
+  ): Promise<T> {
     try {
       const response = await firstValueFrom(
-        this.httpService.patch<T>(url, data, this.buildAxiosConfig(config)).pipe(catchError((error) => this.handleAxiosError(error)))
+        this.httpService
+          .patch<T>(url, data, this.buildAxiosConfig(config))
+          .pipe(catchError((error) => this.handleAxiosError(error))),
       );
       return response.data;
     } catch (error: unknown) {
@@ -111,7 +134,9 @@ export class HttpClientService {
   async delete<T>(url: string, config?: HttpClientConfig): Promise<T> {
     try {
       const response = await firstValueFrom(
-        this.httpService.delete<T>(url, this.buildAxiosConfig(config)).pipe(catchError((error) => this.handleAxiosError(error)))
+        this.httpService
+          .delete<T>(url, this.buildAxiosConfig(config))
+          .pipe(catchError((error) => this.handleAxiosError(error))),
       );
       return response.data;
     } catch (error: unknown) {

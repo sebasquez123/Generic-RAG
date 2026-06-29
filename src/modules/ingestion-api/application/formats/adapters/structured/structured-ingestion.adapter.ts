@@ -4,24 +4,25 @@ import type {
   IngestionFormatAdapter,
   IngestionFormatInput,
 } from '~/modules/ingestion-api/application/ports/ingestion-format-port.port';
-import { TextNoFormattedError } from '~/modules/ingestion-api/domain/errors/domain_errors';
+import { CustomJsonNoFormattedError } from '~/modules/ingestion-api/domain/errors/domain_errors';
 import { LoggerService } from '~/shared/logging/main.logger';
-import  {
+import {
   FormattedIngestionChunk,
   sourceType,
 } from '~/shared/types/semantic-pipeline.type';
 
 @Injectable()
-export class TextIngestionAdapter implements IngestionFormatAdapter {
-  readonly type = sourceType.Text;
-  private readonly logger = new LoggerService(TextIngestionAdapter.name);
-
+export class StructuredIngestionAdapter implements IngestionFormatAdapter {
+  readonly type = sourceType.Structured;
+  private readonly logger = new LoggerService(StructuredIngestionAdapter.name);
+  
   constructor(private readonly gemini: GeminiInfrastructureService) {}
 
   async format(
     input: IngestionFormatInput,
   ): Promise<FormattedIngestionChunk[]> {
-    const chunks = await this.gemini.chunkText(input.content ?? '');
+    const serialized = JSON.stringify(input.data ?? {}, null, 2);
+    const chunks = await this.gemini.chunkText(serialized);
     const chunksProcessed: FormattedIngestionChunk[] = chunks.map((content, index) => ({
       source: input.source,
       content,
@@ -31,10 +32,9 @@ export class TextIngestionAdapter implements IngestionFormatAdapter {
       },
     }));
 
-    if (chunksProcessed.length === 0) throw new TextNoFormattedError(`No formatted chunks were generated from the text source ${input.source}`, input.source);
+    if (chunksProcessed.length === 0) throw new CustomJsonNoFormattedError(`No formatted chunks were generated from the structured source ${input.source}`, input.source);
 
-
-    this.logger.log(`Processed ${chunksProcessed.length} chunks from text source ${input.source}`);
+    this.logger.log(`Processed ${chunksProcessed.length} chunks from structured source ${input.source}`);
     return chunksProcessed;
   }
 }

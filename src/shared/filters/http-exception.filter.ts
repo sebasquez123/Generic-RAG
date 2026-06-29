@@ -7,7 +7,8 @@ import type { Response } from 'express';
 export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: Error, host: ArgumentsHost) {
     const context = host.getType();
-    if (context === 'http') return this.catchHttp(exception, host.switchToHttp());
+    if (context === 'http')
+      return this.catchHttp(exception, host.switchToHttp());
     throw new Error(`Unknown context type: ${context}`);
   }
 

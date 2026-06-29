@@ -5,11 +5,13 @@ import { getTemporaryContext } from '~/shared/middleware/context/global-context'
 import { BotContract, BotEntity } from '../types/context.types';
 
 export const getContractFromContext = createParamDecorator((_data: unknown, _context: ExecutionContext) => {
-  const storage = getTemporaryContext();
-  return storage?.contract as BotContract;
-});
+    const storage = getTemporaryContext();
+    return storage?.contract as BotContract;
+  },
+);
 
 export const getBotIdentityFromContext = createParamDecorator((_data: unknown, _context: ExecutionContext) => {
-  const storage = getTemporaryContext();
-  return storage?.botInfo as BotEntity;
-});
+    const storage = getTemporaryContext();
+    return storage?.botInfo as BotEntity;
+  },
+);

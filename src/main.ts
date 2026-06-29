@@ -20,14 +20,17 @@ async function bootstrap() {
   app.disable('x-powered-by');
   app.enableShutdownHooks();
 
-  const swaggerConfig = new DocumentBuilder().setTitle('Fieldhouse REST API').setVersion(config.app.version).build();
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Fieldhouse REST API')
+    .setVersion(config.app.version)
+    .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('client-api/swagger', app, document, {});
 
   app.setGlobalPrefix('genrag//v1');
 
-  await app.listen(config.app.port?? 3000);
-  
+  await app.listen(config.app.port ?? 3000);
+
   logger.debug(`Listening on ${config.app.port} PORT`);
 }
 void bootstrap();

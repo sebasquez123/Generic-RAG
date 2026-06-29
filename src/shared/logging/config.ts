@@ -27,7 +27,7 @@ const localOptions: LoggerOptions = {
       httpRequest: requestContext?.httpRequest,
       traceId: requestContext?.traceId,
       route: requestContext?.route,
-      timestamp: requestContext?.startTime
+      timestamp: requestContext?.startTime,
     };
   },
 };
@@ -40,22 +40,55 @@ export const logger: Pick<BaseLogger, Level> = {
   info: stdout.info.bind(stdout),
   warn: stdout.warn.bind(stdout),
   error: stdout.error.bind(stdout),
-  fatal: stdout.fatal.bind(stdout) ,
+  fatal: stdout.fatal.bind(stdout),
 };
 
-
 export enum DbLogLimits {
-    NewDbQuery = 'New DB query',
-    QueryDeadline = 'Query deadline',
+  NewDbQuery = 'New DB query',
+  QueryDeadline = 'Query deadline',
 }
 
 export interface PGLogger {
-    logQueryLimits(edgepoint: DbLogLimits, query: string, parameters?: unknown[]): void;
-    logVectorSearch(query: string, vector: number[], limit: number, similarity: 'cosine' | 'euclidean' | 'inner'): void;
-    logVectorDimensionMismatch(expected: number, actual: number, embedding: string): void;
-    logBatchEmbeddingInsert(count: number, totalDimensions: number, query: string): void;
-    logSlowVectorOperation(time: number, query: string, operationType: 'search' | 'insert' | 'index'): void;
-    logEmbeddingRetrieval(count: number, threshold?: number, query?: string): void;
-    logUnexpectedQueryError(error: string | Error, query: string, parameters?: unknown[]): void;
-    logVectorOperationError(error: Error, operationType: 'search' | 'insert' | 'index', query: string, vector?: number[]): void;
+  logQueryLimits(
+    edgepoint: DbLogLimits,
+    query: string,
+    parameters?: unknown[],
+  ): void;
+  logVectorSearch(
+    query: string,
+    vector: number[],
+    limit: number,
+    similarity: 'cosine' | 'euclidean' | 'inner',
+  ): void;
+  logVectorDimensionMismatch(
+    expected: number,
+    actual: number,
+    embedding: string,
+  ): void;
+  logBatchEmbeddingInsert(
+    count: number,
+    totalDimensions: number,
+    query: string,
+  ): void;
+  logSlowVectorOperation(
+    time: number,
+    query: string,
+    operationType: 'search' | 'insert' | 'index',
+  ): void;
+  logEmbeddingRetrieval(
+    count: number,
+    threshold?: number,
+    query?: string,
+  ): void;
+  logUnexpectedQueryError(
+    error: string | Error,
+    query: string,
+    parameters?: unknown[],
+  ): void;
+  logVectorOperationError(
+    error: Error,
+    operationType: 'search' | 'insert' | 'index',
+    query: string,
+    vector?: number[],
+  ): void;
 }
