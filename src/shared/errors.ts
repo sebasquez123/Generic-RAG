@@ -21,7 +21,7 @@ export enum ErrorReasonEnum {
 export class NotFoundError extends NotFoundException {
   constructor(
     message: string,
-    dependency: string,
+    dependency?: string,
     options?: HttpExceptionOptions,
   ) {
     options = options ?? {};
