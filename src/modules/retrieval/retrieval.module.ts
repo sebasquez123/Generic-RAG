@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { StorageModule } from '../storage/storage.module';
+import { StorageModule } from '../7_storage/storage.module';
 import { RetrievalService } from './application/services/retrieval.service';
 
 @Module({
@@ -7,4 +7,4 @@ import { RetrievalService } from './application/services/retrieval.service';
   providers: [RetrievalService],
   exports: [RetrievalService],
 })
-export class RetrievalModule {}
+export class RetrievalModule { }
