@@ -1,4 +1,4 @@
-# Generic RAG MVP
+# Generic RAG
 
 NestJS API for the ingestion and retrieval foundation of a RAG system.
 
