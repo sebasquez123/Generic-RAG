@@ -12,7 +12,7 @@ source input -> formatting -> embedding -> pgvector storage -> ingestion receipt
 
 Prisma, relational Postgres modules, selectable answer-generation engines, and chat flows are intentionally out of scope.
 
-![Proyect preview](src/assets/images/cover.jpeg)
+![Proyect preview](assets/images/cover.jpeg)
 
 ## Current Endpoints
 
