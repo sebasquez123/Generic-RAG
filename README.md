@@ -1,4 +1,6 @@
 # GenRag MVP
+![Proyect preview](assets/cover1.png)
+![Proyect preview](assets/cover2.png)
 
 NestJS microservice that turns documents into retrievable, citable evidence for an **external** LLM server.
 
