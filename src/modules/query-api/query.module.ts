@@ -3,10 +3,11 @@ import { RetrievalModule } from '../retrieval/retrieval.module';
 import { ScoringModule } from '../scoring/scoring.module';
 import { QueryService } from './application/services/query.service';
 import { QueryController } from './presentation/controllers/query.controller';
+import { SearchController } from './presentation/controllers/search.controller';
 
 @Module({
   imports: [RetrievalModule, ScoringModule],
-  controllers: [QueryController],
+  controllers: [SearchController, QueryController],
   providers: [QueryService],
   exports: [QueryService],
 })

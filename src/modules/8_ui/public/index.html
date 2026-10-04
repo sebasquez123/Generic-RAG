@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GenRag · Ingesta</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1d2330; --muted: #667085; --line: #e4e7ec;
+    --accent: #2f5bea; --ok: #12805c; --warn: #b54708; --bad: #c01f3a; --chip: #eef2ff;
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 16px; padding: 16px 24px; max-width: 1400px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  label { display: block; font-weight: 600; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: #fff; color: inherit; }
+  textarea { min-height: 54px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .label-row { display: flex; align-items: baseline; gap: 6px; }
+  .label-row label { display: inline-block; }
+  .label-row .link { margin-left: auto; }
+  button.link { padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; text-decoration: underline; }
+  .info { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; border-radius: 50%; background: var(--chip); color: var(--accent); font-size: 11px; font-weight: 700; font-style: normal; cursor: help; }
+  .info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* Positioned by placeTip() so the card always stays inside the viewport. */
+  .tip { position: fixed; z-index: 20; width: min(320px, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px rgba(16, 24, 40, .14); font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left; cursor: auto; visibility: hidden; opacity: 0; transition: opacity .12s; }
+  .info:hover .tip, .info:focus .tip, .info:focus-within .tip { visibility: visible; opacity: 1; }
+  .tip-p { display: block; }
+  .tip-p + .tip-p { margin-top: 6px; }
+  .tip strong { color: var(--ink); }
+  .hint { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+  .hint code { font-size: 11px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: #fff; color: var(--accent); }
+  button.danger { background: #fff; color: var(--bad); border-color: var(--bad); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--chip); }
+  .fileinfo { margin-top: 8px; font-size: 13px; }
+  .fileinfo dt { color: var(--muted); float: left; width: 90px; }
+  .fileinfo dd { margin: 0 0 2px 90px; overflow-wrap: anywhere; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .stepper { display: flex; gap: 4px; margin: 14px 0 6px; flex-wrap: wrap; }
+  .step { flex: 1; min-width: 70px; text-align: center; font-size: 11px; padding: 5px 2px; border-radius: 4px; background: #f2f4f7; color: var(--muted); }
+  .step.active { background: var(--chip); color: var(--accent); font-weight: 700; }
+  .step.done { background: #e7f6ef; color: var(--ok); }
+  .step.failed { background: #fde8ec; color: var(--bad); font-weight: 700; }
+  progress { width: 100%; height: 8px; }
+  .msg { padding: 9px 11px; border-radius: 6px; margin-top: 10px; font-size: 13px; overflow-wrap: anywhere; }
+  .msg.error { background: #fde8ec; color: var(--bad); }
+  .msg.ok { background: #e7f6ef; color: var(--ok); }
+  .msg.info { background: var(--chip); color: var(--accent); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
+  .PENDING { background: #f2f4f7; color: var(--muted); } .PROCESSING { background: var(--chip); color: var(--accent); }
+  .COMPLETED { background: #e7f6ef; color: var(--ok); } .FAILED { background: #fde8ec; color: var(--bad); }
+  .chunk { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-top: 8px; font-size: 13px; }
+  .chunk header { all: unset; display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .chunk pre { white-space: pre-wrap; margin: 0; font: inherit; max-height: 180px; overflow: auto; }
+  .score { font-weight: 700; color: var(--ink); }
+  .toolbar { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+  .toolbar > div { flex: 1; min-width: 140px; }
+  .muted { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .stack { display: grid; gap: 16px; min-width: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GenRag</h1>
+  <span>Ingesta de documentos y prueba de recuperación · consume la API pública <code>/api/v1</code></span>
+</header>
+<main>
+  <section>
+    <h2>1. Subir documento</h2>
+    <div class="drop" id="drop" tabindex="0">Arrastra un archivo aquí o haz clic para seleccionarlo<br><small>PDF · XLSX · TXT/MD · JSON</small></div>
+    <input type="file" id="file" accept=".pdf,.xlsx,.txt,.md,.markdown,.json" hidden>
+    <dl class="fileinfo" id="fileinfo" hidden></dl>
+
+    <div class="label-row"><label for="namespace">Namespace / tenant</label><span class="info" tabindex="0" role="button" data-help="namespace" aria-label="Ayuda: namespace">!</span></div>
+    <input id="namespace" placeholder="default">
+    <div class="label-row"><label for="source">Source (origen, opcional)</label><span class="info" tabindex="0" role="button" data-help="source" aria-label="Ayuda: source">!</span></div>
+    <input id="source" placeholder="p. ej. finanzas/2025/informe.pdf">
+    <div class="label-row"><label for="tags">Tags (separados por coma)</label><span class="info" tabindex="0" role="button" data-help="tags" aria-label="Ayuda: tags">!</span></div>
+    <input id="tags" placeholder="finanzas, anual">
+    <div class="label-row">
+      <label for="metadata">Metadata del documento (JSON)</label><span class="info" tabindex="0" role="button" data-help="metadata" aria-label="Ayuda: metadata">!</span>
+      <button type="button" class="link" id="metadataTemplate">Usar plantilla</button>
+    </div>
+    <textarea id="metadata" rows="12"></textarea>
+    <p class="hint">
+      Ejemplo orientativo, no obligatorio: cualquier objeto JSON es válido. Agrupa por
+      <code>document</code>, <code>organization</code>, <code>ownership</code>, <code>temporal</code>,
+      <code>classification</code>, <code>domain</code> y <code>lineage</code>. La búsqueda filtra por contención
+      (<code>filters.metadata</code>, p. ej. <code>{"classification":{"confidentiality":"interno"}}</code>),
+      así que usa valores normalizados (minúsculas, snake_case, códigos ISO) y roles en lugar de nombres de personas.
+    </p>
+
+    <details>
+      <summary>Opciones de chunking <span class="info" tabindex="0" role="button" data-help="chunking" aria-label="Ayuda: chunking">!</span></summary>
+      <div class="row">
+        <div><div class="label-row"><label for="strategy">Estrategia</label><span class="info" tabindex="0" role="button" data-help="strategy" aria-label="Ayuda: estrategia">!</span></div>
+          <select id="strategy"><option value="">auto</option><option>recursive</option><option>table</option></select></div>
+        <div><div class="label-row"><label for="chunkSize">chunk_size</label><span class="info" tabindex="0" role="button" data-help="chunkSize" aria-label="Ayuda: chunk_size">!</span></div>
+          <input id="chunkSize" type="number" min="200" max="8000" placeholder="1200"></div>
+        <div><div class="label-row"><label for="chunkOverlap">chunk_overlap</label><span class="info" tabindex="0" role="button" data-help="chunkOverlap" aria-label="Ayuda: chunk_overlap">!</span></div>
+          <input id="chunkOverlap" type="number" min="0" placeholder="200"></div>
+      </div>
+      <div class="label-row"><label><input type="checkbox" id="force" style="width:auto"> Forzar re-ingesta si ya existe</label><span class="info" tabindex="0" role="button" data-help="force" aria-label="Ayuda: forzar re-ingesta">!</span></div>
+    </details>
+
+    <div class="actions">
+      <button id="upload" disabled>Ingest</button>
+      <button class="secondary" id="reset">Limpiar</button>
+    </div>
+
+    <div id="status" hidden>
+      <div class="stepper" id="stepper"></div>
+      <progress id="progress" max="1" value="0"></progress>
+      <div class="muted" id="progressText"></div>
+    </div>
+    <div id="messages"></div>
+    <div id="result"></div>
+  </section>
+
+  <div class="stack">
+    <section>
+      <h2>2. Documentos</h2>
+      <div class="toolbar">
+        <div><div class="label-row"><label for="listNamespace">Namespace</label><span class="info" tabindex="0" role="button" data-help="listNamespace" aria-label="Ayuda: namespace de la lista">!</span></div><input id="listNamespace" placeholder="(todos)"></div>
+        <div><div class="label-row"><label for="listStatus">Estado</label><span class="info" tabindex="0" role="button" data-help="listStatus" aria-label="Ayuda: estado">!</span></div>
+          <select id="listStatus"><option value="">(todos)</option><option>PENDING</option><option>PROCESSING</option><option>COMPLETED</option><option>FAILED</option></select></div>
+        <button class="secondary" id="refresh">Actualizar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Documento</th><th>Tipo</th><th>Estado</th><th>Chunks</th><th>Creado</th><th></th></tr></thead>
+          <tbody id="docs"><tr><td colspan="6" class="muted">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="docDetail"></div>
+    </section>
+
+    <section>
+      <h2>3. Probar recuperación (POST /search)</h2>
+      <div class="toolbar">
+        <div style="flex:3"><div class="label-row"><label for="query">Consulta</label><span class="info" tabindex="0" role="button" data-help="query" aria-label="Ayuda: consulta">!</span></div><input id="query" placeholder="¿Cuál fue la facturación de 2025?"></div>
+        <div><div class="label-row"><label for="topK">top_k</label><span class="info" tabindex="0" role="button" data-help="topK" aria-label="Ayuda: top_k">!</span></div><input id="topK" type="number" min="1" max="50" value="5"></div>
+        <div><div class="label-row"><label for="minScore">min_score</label><span class="info" tabindex="0" role="button" data-help="minScore" aria-label="Ayuda: min_score">!</span></div><input id="minScore" type="number" step="0.05" min="-1" max="1" placeholder="config"></div>
+        <button id="search">Buscar</button>
+      </div>
+      <div id="searchResults"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  const API = '/api/v1';
+  const STAGES = ['VALIDATION', 'PARSING', 'CHUNKING', 'EMBEDDING', 'STORAGE'];
+  const $ = (id) => document.getElementById(id);
+  let selected = null;
+  let pollTimer = null;
+
+  // Suggested (not enforced) enterprise metadata layout; any JSON object is accepted.
+  const METADATA_TEMPLATE = {
+    schema_version: '1.0',
+    document: { title: 'Informe de facturación anual 2025', type: 'informe_financiero', language: 'es', version: '2.1', status: 'aprobado' },
+    organization: { business_unit: 'finanzas', department: 'contabilidad', region: 'latam', country: 'CO' },
+    ownership: { owner_team: 'contabilidad_corporativa', author_role: 'analista_financiero', approver_role: 'director_financiero' },
+    temporal: { fiscal_year: 2025, period: 'Q4', effective_date: '2025-01-01', review_date: '2026-01-31', expiration_date: null },
+    classification: { confidentiality: 'interno', data_categories: ['financiero'], contains_pii: false, regulations: ['sox', 'iso27001'], retention_policy: '7y' },
+    domain: { process: 'cierre_contable', products: ['facturacion'], keywords: ['ingresos', 'cierre anual'] },
+    lineage: { system_of_record: 'erp', external_id: 'FIN-2025-0042', source_url: 'https://intranet.example.com/docs/FIN-2025-0042' },
+  };
+  const metadataTemplateText = JSON.stringify(METADATA_TEMPLATE, null, 2);
+  $('metadata').placeholder = metadataTemplateText;
+  $('metadataTemplate').addEventListener('click', () => {
+    $('metadata').value = metadataTemplateText;
+    $('metadata').focus();
+  });
+
+  // Beginner-oriented help shown in the "!" cards; each entry is a list of paragraphs (trusted static HTML).
+  const HELP = {
+    namespace: [
+      '<strong>¿Qué es?</strong> Un espacio aislado para agrupar documentos, como una carpeta separada por cliente, área o proyecto.',
+      'Las búsquedas solo devuelven documentos del namespace indicado, así no se mezcla información de clientes o áreas distintas.',
+      'Vacío = <code>default</code>. Solo letras, números y <code>_ . : -</code> (máx. 64 caracteres).',
+      '<strong>Ojo:</strong> el mismo archivo subido a dos namespaces son dos documentos independientes (se procesa y se paga dos veces). Define una convención, p. ej. <code>finanzas</code> o <code>cliente-acme</code>, y respétala.',
+    ],
+    source: [
+      '<strong>¿Qué es?</strong> Una referencia de dónde viene el documento: una ruta, URL o sistema (p. ej. <code>sharepoint/finanzas/informe.pdf</code>).',
+      'Sirve para trazabilidad: cuando un resultado responde algo, sabes de qué archivo original salió. Desde la API también se puede filtrar por source.',
+      'Opcional (máx. 500 caracteres). Si lo dejas vacío se usa el nombre del archivo.',
+    ],
+    tags: [
+      '<strong>¿Qué son?</strong> Etiquetas cortas y libres para clasificar el documento (p. ej. <code>finanzas, anual, auditoria</code>).',
+      'Permiten limitar una búsqueda a un grupo de documentos (<code>filters.tags</code> en la API): basta con que el documento tenga <em>una</em> de las etiquetas pedidas.',
+      '<strong>Distinguen mayúsculas:</strong> <code>Finanzas</code> y <code>finanzas</code> son etiquetas distintas. Usa pocas, en minúsculas y siempre escritas igual (máx. 50, de hasta 64 caracteres).',
+    ],
+    metadata: [
+      '<strong>¿Qué es?</strong> Información extra sobre el documento en formato JSON: año, área, confidencialidad, equipo responsable… No se usa para entender el contenido, sino para describirlo.',
+      'Sirve para filtrar con precisión (“solo documentos de 2025 del área finanzas”) y se devuelve junto a cada resultado.',
+      'Opcional. Pulsa <strong>Usar plantilla</strong> para partir de un ejemplo completo y borra lo que no necesites.',
+    ],
+    chunking: [
+      '<strong>¿Qué es un chunk?</strong> El sistema no busca sobre el documento entero: lo corta en fragmentos (chunks) y convierte cada uno en un <em>embedding</em>, una lista de números que representa su significado.',
+      'Al buscar, tu pregunta también se convierte en embedding y se devuelven los fragmentos con el significado más parecido.',
+      'Estas opciones controlan cómo se corta el documento. <strong>Si no estás seguro, déjalas vacías:</strong> los valores por defecto (auto, 1200, 200) funcionan bien para la mayoría de los casos.',
+    ],
+    strategy: [
+      '<strong>auto (recomendada)</strong> elige por bloque: texto → <em>recursive</em>, tablas → <em>table</em>. Úsala salvo que tengas un motivo concreto.',
+      '<strong>recursive</strong> para prosa (PDF, TXT/MD): respeta secciones (un chunk nunca mezcla dos) y corta por párrafo → línea → oración → palabra, así cada fragmento conserva una idea completa.',
+      '<strong>table</strong> para hojas de cálculo y tablas: un chunk resumen por tabla (columnas, rango de filas) más grupos de hasta 20 filas, cada fila como <code>Columna: valor</code> para que el fragmento se entienda sin el encabezado. Forzarla en prosa genera fragmentos sin sentido.',
+    ],
+    chunkSize: [
+      'Tamaño máximo de cada fragmento, en <strong>caracteres</strong> (200–8000).',
+      '<strong>Recomendado: 1200</strong> (≈ 250–300 tokens en español): suficiente para un párrafo con su contexto y lo bastante enfocado para que el embedding represente una sola idea.',
+      'Más pequeño (600–800): mayor precisión en FAQs, glosarios o respuestas cortas, pero pierde contexto y genera más chunks (más costo de embedding).',
+      'Más grande (1800–2500): útil en contratos o documentación técnica con argumentos largos, pero el vector se “diluye” entre varios temas y el score baja.',
+      'En tablas también limita cuántas filas caben por chunk.',
+    ],
+    chunkOverlap: [
+      'Caracteres que se repiten entre un chunk y el siguiente (máximo la mitad de <code>chunk_size</code>); se alinean a oraciones completas.',
+      '<strong>Recomendado: 200</strong> (≈ 15 % de 1200): evita que una idea partida en el borde quede incompleta en ambos fragmentos.',
+      'Regla práctica: 10–20 % del <code>chunk_size</code>. Con 0 se pierden respuestas que cruzan el corte; por encima de ~25 % hay resultados casi duplicados en el top_k y más costo de embedding sin mejorar la recuperación.',
+    ],
+    force: [
+      '<strong>¿Qué hace?</strong> Vuelve a procesar el documento completo (leer, cortar, generar embeddings y guardar) aunque ya esté procesado con la misma configuración.',
+      '<strong>Sin marcarla:</strong> si el documento ya está COMPLETED con los mismos parámetros, se omite porque no hay nada que cambiar. Si cambiaste estrategia, chunk_size, overlap o el modelo de embeddings, se re-procesa solo, sin forzar.',
+      '<strong>Cuándo usarla:</strong> tras actualizar el código del lector o del chunker, si sospechas que los fragmentos quedaron mal, o para pruebas.',
+      '<strong>Repercusiones:</strong> se vuelven a pagar los embeddings de todos los fragmentos y tarda lo mismo que la primera vez. El cambio es atómico: los fragmentos anteriores siguen respondiendo búsquedas mientras tanto y, si algo falla, se conservan.',
+      '<strong>No actualiza</strong> tags, source ni metadata: subir otra vez el mismo archivo reutiliza el documento existente con sus datos originales. Si está en proceso, la API responde <code>409</code> (ocupado).',
+    ],
+    listNamespace: [
+      'Filtra la lista de documentos por namespace. Vacío = todos.',
+      '<strong>También define dónde busca la sección 3:</strong> la búsqueda siempre ocurre dentro de un solo namespace. Si lo dejas vacío, busca en <code>default</code>, no en todos.',
+    ],
+    listStatus: [
+      'Estado de procesamiento de cada documento:',
+      '<strong>PENDING</strong>: subido, aún no procesado. <strong>PROCESSING</strong>: en curso (leyendo, cortando o generando embeddings). <strong>COMPLETED</strong>: listo para búsquedas. <strong>FAILED</strong>: falló; el detalle indica en qué etapa y por qué.',
+      'Un documento atascado en PROCESSING más de 15 minutos (p. ej. tras un reinicio) se puede volver a ingerir.',
+    ],
+    query: [
+      'Escribe la pregunta como se la harías a una persona: <em>“¿Cuál fue la facturación de 2025?”</em>.',
+      'La búsqueda es <strong>semántica</strong>: compara significados, no palabras exactas, así que encuentra “ingresos anuales” aunque escribas “facturación del año”.',
+      'Esta prueba devuelve los fragmentos recuperados, no una respuesta redactada: sirve para comprobar si el sistema encuentra la información correcta.',
+    ],
+    topK: [
+      '<strong>¿Qué es?</strong> Cuántos fragmentos devolver como máximo, ordenados del más al menos parecido. Por defecto 5, máximo 50.',
+      '<strong>Recomendado: 3–8.</strong> Pocos pueden dejar fuera información necesaria; demasiados meten ruido y, si se pasan a un LLM, aumentan el costo y pueden confundirlo.',
+      'Es un máximo: si pocos fragmentos superan el <code>min_score</code>, recibirás menos.',
+    ],
+    minScore: [
+      '<strong>¿Qué es?</strong> El parecido mínimo exigido para devolver un fragmento. El score es la similitud entre tu pregunta y el fragmento: 1 = idénticos, 0 = sin relación (rango técnico de −1 a 1).',
+      'Vacío = valor de configuración (<strong>0.6</strong>). En la práctica, los resultados relevantes suelen estar entre 0.65 y 0.85.',
+      'Súbelo (0.7–0.75) si aparecen resultados que no tienen que ver; bájalo (0.5) si no aparece nada aunque sabes que la información existe.',
+      'Los resultados muestran cuántos “candidatos” se evaluaron y cuántos quedaron “bajo el umbral”: si casi todos quedan por debajo, el umbral es demasiado alto o la pregunta está lejos del contenido.',
+    ],
+  };
+
+  // Keep the card inside the viewport whatever column or screen width the icon is in.
+  const placeTip = (icon) => {
+    const tip = icon.querySelector('.tip');
+    const anchor = icon.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    const left = Math.min(Math.max(8, anchor.left - 8), window.innerWidth - width - 8);
+    const below = anchor.bottom + 6;
+    const top = below + height > window.innerHeight - 8 ? Math.max(8, anchor.top - height - 6) : below;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  };
+
+  for (const icon of document.querySelectorAll('.info[data-help]')) {
+    const tip = document.createElement('span');
+    tip.className = 'tip';
+    tip.id = `tip-${icon.dataset.help}`;
+    tip.setAttribute('role', 'tooltip');
+    tip.innerHTML = HELP[icon.dataset.help].map((paragraph) => `<span class="tip-p">${paragraph}</span>`).join('');
+    icon.append(tip);
+    icon.setAttribute('aria-describedby', tip.id);
+    icon.addEventListener('mouseenter', () => placeTip(icon));
+    icon.addEventListener('focus', () => placeTip(icon));
+    // Inside <summary>/<label> a click would toggle the section or the checkbox.
+    icon.addEventListener('click', (event) => event.preventDefault());
+  }
+  // Cards are position: fixed, so follow the icon while the page scrolls.
+  window.addEventListener('scroll', () => {
+    for (const icon of document.querySelectorAll('.info:hover, .info:focus')) placeTip(icon);
+  }, { passive: true });
+
+  const el = (tag, attrs = {}, ...children) => {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      if (key === 'class') node.className = value;
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value);
+    }
+    for (const child of children.flat()) if (child != null) node.append(child instanceof Node ? child : String(child));
+    return node;
+  };
+  const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  const detectType = (name) => ({ pdf: 'pdf', xlsx: 'xlsx', txt: 'txt', md: 'txt', markdown: 'txt', json: 'json' })[name.split('.').pop().toLowerCase()] ?? 'no soportado';
+
+  async function api(path, options = {}) {
+    const response = await fetch(API + path, options);
+    const text = await response.text();
+    const body = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      const message = body?.message ?? response.statusText;
+      const detail = body?.fieldErrors ? JSON.stringify(body.fieldErrors) : '';
+      const error = new Error(`${response.status} · ${Array.isArray(message) ? message.join(', ') : message} ${detail}`.trim());
+      error.status = response.status;
+      throw error;
+    }
+    return body;
+  }
+
+  function message(kind, text) {
+    $('messages').append(el('div', { class: `msg ${kind}` }, text));
+  }
+
+  // ---------------------------------------------------------------- upload
+  function selectFile(file) {
+    selected = file;
+    const info = $('fileinfo');
+    info.replaceChildren(
+      el('dt', {}, 'Nombre'), el('dd', {}, file.name),
+      el('dt', {}, 'Tamaño'), el('dd', {}, formatBytes(file.size)),
+      el('dt', {}, 'Tipo'), el('dd', {}, `${detectType(file.name)} (${file.type || 'mime desconocido'})`),
+      el('dt', {}, 'Modificado'), el('dd', {}, new Date(file.lastModified).toLocaleString()),
+    );
+    info.hidden = false;
+    $('upload').disabled = false;
+  }
+
+  const drop = $('drop');
+  drop.addEventListener('click', () => $('file').click());
+  drop.addEventListener('keydown', (event) => (event.key === 'Enter' || event.key === ' ') && $('file').click());
+  drop.addEventListener('dragover', (event) => { event.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (event) => {
+    event.preventDefault(); drop.classList.remove('over');
+    if (event.dataTransfer.files[0]) selectFile(event.dataTransfer.files[0]);
+  });
+  $('file').addEventListener('change', (event) => event.target.files[0] && selectFile(event.target.files[0]));
+
+  function renderStepper(document) {
+    const failedStage = document.status === 'FAILED' ? document.error?.stage ?? document.stage : null;
+    const current = STAGES.indexOf(document.stage);
+    $('stepper').replaceChildren(...STAGES.map((stage, index) => {
+      let state = '';
+      if (document.status === 'COMPLETED') state = 'done';
+      else if (failedStage === stage) state = 'failed';
+      else if (current > index || (failedStage && STAGES.indexOf(failedStage) > index)) state = 'done';
+      else if (current === index && document.status === 'PROCESSING') state = 'active';
+      return el('div', { class: `step ${state}` }, stage);
+    }));
+    const { chunks_total: total, chunks_embedded: embedded } = document.progress;
+    $('progress').max = total || 1;
+    $('progress').value = document.status === 'COMPLETED' ? (total || 1) : (embedded || 0);
+    $('progressText').textContent = `${document.status}${document.stage ? ' · ' + document.stage : ''}` +
+      (total ? ` · ${embedded ?? 0}/${total} chunks embebidos` : '');
+    $('status').hidden = false;
+  }
+
+  async function renderResult(document) {
+    const result = $('result');
+    result.replaceChildren();
+    if (document.status === 'FAILED') {
+      message('error', `Falló en la etapa ${document.error?.stage}: [${document.error?.code}] ${document.error?.message}`);
+      return;
+    }
+    const warnings = document.system?.parser?.warnings ?? [];
+    message('ok', `Ingesta completada: ${document.chunk_count} chunks · embedding ${document.system?.embedding?.version} · ${document.system?.chunking?.version}`);
+    warnings.forEach((warning) => message('info', `Aviso: ${warning}`));
+    const timings = Object.entries(document.progress.timings_ms || {}).map(([k, v]) => `${k}: ${v} ms`).join(' · ');
+    if (timings) result.append(el('div', { class: 'muted', style: 'margin-top:8px' }, `Tiempos: ${timings}`));
+    const chunks = await api(`/documents/${document.id}/chunks?limit=5`);
+    result.append(el('h2', { style: 'margin-top:14px' }, `Primeros chunks (${chunks.total} en total)`), ...chunks.items.map(renderChunk));
+  }
+
+  function renderChunk(chunk) {
+    const where = [
+      `#${chunk.chunk_index}`, chunk.chunk_type,
+      chunk.page_start != null ? `pág. ${chunk.page_start}${chunk.page_end !== chunk.page_start ? '-' + chunk.page_end : ''}` : null,
+      chunk.sheet ? `hoja ${chunk.sheet}` : null,
+      chunk.metadata?.row_start != null ? `filas ${chunk.metadata.row_start}-${chunk.metadata.row_end}` : null,
+      chunk.section ? `§ ${chunk.section}` : null,
+    ].filter(Boolean);
+    return el('div', { class: 'chunk' }, el('header', {}, where.map((part) => el('span', {}, part))), el('pre', {}, chunk.content));
+  }
+
+  function poll(id) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => {
+      try {
+        const document = await api(`/documents/${id}`);
+        renderStepper(document);
+        if (document.status === 'PROCESSING' || document.status === 'PENDING') return poll(id);
+        $('upload').disabled = false;
+        await renderResult(document);
+        loadDocuments();
+      } catch (error) {
+        message('error', `No se pudo consultar el estado: ${error.message}`);
+        $('upload').disabled = false;
+      }
+    }, 800);
+  }
+
+  function chunkingOptions() {
+    const chunking = {};
+    if ($('strategy').value) chunking.strategy = $('strategy').value;
+    if ($('chunkSize').value) chunking.chunk_size = Number($('chunkSize').value);
+    if ($('chunkOverlap').value) chunking.chunk_overlap = Number($('chunkOverlap').value);
+    return Object.keys(chunking).length ? chunking : undefined;
+  }
+
+  async function ingest(id, force) {
+    const started = await api(`/documents/${id}/ingest`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ force, chunking: chunkingOptions() }),
+    });
+    renderStepper(started.document);
+    if (!started.started) {
+      message('info', 'El documento ya estaba ingerido con la misma configuración (usa "Forzar re-ingesta" para repetir).');
+      $('upload').disabled = false;
+      await renderResult(started.document);
+      return;
+    }
+    poll(id);
+  }
+
+  $('upload').addEventListener('click', async () => {
+    if (!selected) return;
+    $('messages').replaceChildren(); $('result').replaceChildren();
+    const metadata = $('metadata').value.trim();
+    if (metadata) {
+      try { JSON.parse(metadata); } catch { return message('error', 'La metadata debe ser un JSON válido'); }
+    }
+    const form = new FormData();
+    form.append('file', selected);
+    for (const [field, id] of [['namespace', 'namespace'], ['source', 'source'], ['tags', 'tags'], ['metadata', 'metadata']])
+      if ($(id).value.trim()) form.append(field, $(id).value.trim());
+
+    $('upload').disabled = true;
+    try {
+      const uploaded = await api('/documents', { method: 'POST', body: form });
+      if (uploaded.duplicate) message('info', `Este archivo ya existía en el namespace (id ${uploaded.document.id}); no se duplicó.`);
+      else message('ok', `Documento registrado (id ${uploaded.document.id}).`);
+      await ingest(uploaded.document.id, $('force').checked);
+      loadDocuments();
+    } catch (error) {
+      message('error', `Error: ${error.message}`);
+      $('upload').disabled = false;
+    }
+  });
+
+  $('reset').addEventListener('click', () => {
+    selected = null; $('file').value = ''; $('fileinfo').hidden = true; $('upload').disabled = true;
+    $('status').hidden = true; $('messages').replaceChildren(); $('result').replaceChildren();
+    clearTimeout(pollTimer);
+  });
+
+  // ------------------------------------------------------------- documents
+  async function loadDocuments() {
+    const params = new URLSearchParams({ limit: '50' });
+    if ($('listNamespace').value.trim()) params.set('namespace', $('listNamespace').value.trim());
+    if ($('listStatus').value) params.set('status', $('listStatus').value);
+    try {
+      const page = await api(`/documents?${params}`);
+      $('docs').replaceChildren(...(page.items.length ? page.items.map(renderDocumentRow)
+        : [el('tr', {}, el('td', { colspan: '6', class: 'muted' }, 'Sin documentos'))]));
+    } catch (error) {
+      $('docs').replaceChildren(el('tr', {}, el('td', { colspan: '6', class: 'msg error' }, error.message)));
+    }
+  }
+
+  function renderDocumentRow(document) {
+    const status = el('span', { class: `badge ${document.status}` }, document.status);
+    if (document.error) status.title = `${document.error.stage}: ${document.error.message}`;
+    return el('tr', {},
+      el('td', {}, el('strong', {}, document.name), el('div', { class: 'muted' }, `${document.namespace} · ${document.source}`),
+        document.requires_reindex ? el('div', { class: 'msg info' }, 'Requiere re-ingesta (cambió el modelo de embedding)') : null,
+        document.error ? el('div', { class: 'muted' }, `✗ ${document.error.stage}: ${document.error.message}`) : null),
+      el('td', {}, document.document_type),
+      el('td', {}, status),
+      el('td', {}, String(document.chunk_count)),
+      el('td', {}, new Date(document.created_at).toLocaleString()),
+      el('td', {},
+        el('div', { class: 'actions', style: 'margin:0' },
+          el('button', { class: 'secondary', onclick: () => showChunks(document) }, 'Chunks'),
+          el('button', { class: 'secondary', onclick: () => reingest(document) }, 'Re-ingerir'),
+          el('button', { class: 'danger', onclick: (event) => removeDocument(document, event.target) }, 'Eliminar'))));
+  }
+
+  async function showChunks(document) {
+    const detail = $('docDetail');
+    try {
+      const chunks = await api(`/documents/${document.id}/chunks?limit=20`);
+      detail.replaceChildren(el('h2', { style: 'margin-top:14px' }, `${document.name}: ${chunks.total} chunks (primeros 20)`), ...chunks.items.map(renderChunk));
+    } catch (error) {
+      detail.replaceChildren(el('div', { class: 'msg error' }, error.message));
+    }
+  }
+
+  async function reingest(document) {
+    $('messages').replaceChildren(); $('result').replaceChildren();
+    try { await ingest(document.id, true); } catch (error) { message('error', error.message); }
+  }
+
+  async function removeDocument(document, button) {
+    // Inline two-step confirmation (no blocking dialogs).
+    if (button.dataset.confirm !== 'yes') {
+      button.dataset.confirm = 'yes'; button.textContent = '¿Confirmar?';
+      setTimeout(() => { button.dataset.confirm = ''; button.textContent = 'Eliminar'; }, 4000);
+      return;
+    }
+    try { await api(`/documents/${document.id}`, { method: 'DELETE' }); loadDocuments(); $('docDetail').replaceChildren(); }
+    catch (error) { $('docDetail').replaceChildren(el('div', { class: 'msg error' }, error.message)); }
+  }
+
+  $('refresh').addEventListener('click', loadDocuments);
+  $('listStatus').addEventListener('change', loadDocuments);
+
+  // ---------------------------------------------------------------- search
+  async function search() {
+    const query = $('query').value.trim();
+    if (!query) return;
+    const body = { query, top_k: Number($('topK').value) || 5 };
+    if ($('minScore').value !== '') body.min_score = Number($('minScore').value);
+    if ($('listNamespace').value.trim()) body.namespace = $('listNamespace').value.trim();
+    const target = $('searchResults');
+    target.replaceChildren(el('div', { class: 'muted' }, 'Buscando…'));
+    try {
+      const response = await api('/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const stats = response.retrieval;
+      target.replaceChildren(
+        el('div', { class: 'muted', style: 'margin-top:8px' },
+          `${response.results.length} resultados · ${stats.candidates} candidatos · ${stats.below_threshold} bajo el umbral ${stats.min_score} · ${stats.took_ms} ms`),
+        response.found ? null : el('div', { class: 'msg info' }, response.message),
+        ...response.results.map((result) => el('div', { class: 'chunk' },
+          el('header', {}, el('span', { class: 'score' }, `#${result.rank} · ${result.score}`), el('span', {}, result.citation)),
+          el('pre', {}, result.content))));
+    } catch (error) {
+      target.replaceChildren(el('div', { class: 'msg error' }, error.message));
+    }
+  }
+  $('search').addEventListener('click', search);
+  $('query').addEventListener('keydown', (event) => event.key === 'Enter' && search());
+
+  loadDocuments();
+})();
+</script>
+</body>
+</html>

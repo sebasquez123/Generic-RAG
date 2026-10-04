@@ -1,6 +1,6 @@
 # Scheduled Codex Agent Rules
 
-Default project name: `Generic-RAG`.
+Default project name: `GenRag`.
 
 This file is exclusively for automated Codex agents that operate through scheduled jobs. These agents do not own implementation work. Their job is to inspect the repository, compare the current code with the latest previous report, and write high-quality guidance for the human developer or a later implementation task.
 

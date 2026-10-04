@@ -1,16 +1,13 @@
-version: '3.9'
-
 services:
   # PostgreSQL with pgvector extension
   db:
     container_name: genrag_pgvector_db
-    image: pgvector/pgvector:pg15-latest
+    image: pgvector/pgvector:pg15
     restart: always
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=vector"
     ports:
       - "9532:5432"
     volumes:
@@ -33,21 +30,14 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT}:${APP_PORT}"
+    # Every key from .env reaches the container, so it never drifts from the
+    # required keys validated against .env.example in src/config.ts.
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=${NODE_ENV}
-      - APP_ENV=${APP_ENV}
-      - APP_PORT=${APP_PORT}
-      - APP_VERSION=${APP_VERSION}
-      - APP_API_URL=${APP_API_URL}
-      - APP_URL=${APP_URL}
+      # Container-to-container traffic uses the service name and internal Postgres port.
       - DB_HOST=db
-      - DB_PORT=${DB_PORT}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - LOG_LEVEL=${LOG_LEVEL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DB_PORT=5432
     depends_on:
       db:
         condition: service_healthy

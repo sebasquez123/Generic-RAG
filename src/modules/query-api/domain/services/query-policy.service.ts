@@ -1,10 +1,44 @@
-import { SemanticQuery } from '../entities/semantic-query.entity';
+import type { SearchFilters } from '~/shared/types/semantic-pipeline.type';
+import {
+  SemanticQuery,
+  type ResultOrder,
+} from '../entities/semantic-query.entity';
+
+export interface QueryPolicyConfig {
+  defaultNamespace: string;
+  defaultTopK: number;
+  maxTopK: number;
+  minScore: number;
+}
+
+export interface QueryInput {
+  query: string;
+  namespace?: string;
+  topK?: number;
+  minScore?: number;
+  filters?: SearchFilters;
+  orderBy?: ResultOrder;
+}
 
 export class QueryPolicyService {
-  normalize(question: string, contextLimit = 5): SemanticQuery {
+  constructor(private readonly config: QueryPolicyConfig) {}
+
+  normalize(input: QueryInput): SemanticQuery {
+    const topK = Math.max(
+      1,
+      Math.min(input.topK ?? this.config.defaultTopK, this.config.maxTopK),
+    );
+    const minScore = Math.max(
+      -1,
+      Math.min(input.minScore ?? this.config.minScore, 1),
+    );
     return new SemanticQuery(
-      question.trim(),
-      Math.max(1, Math.min(contextLimit, 10)),
+      input.query.replace(/\s+/g, ' ').trim(),
+      input.namespace ?? this.config.defaultNamespace,
+      topK,
+      minScore,
+      input.filters ?? {},
+      input.orderBy ?? 'score',
     );
   }
 }

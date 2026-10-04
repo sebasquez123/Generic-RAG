@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { LlmsModule } from "~/modules/5_LLM's/llms.module";
 import { ChunkingService } from './application/chunking.service';
 
+// Chunking is deterministic and provider-free: it no longer depends on the LLM
+// module (which only supplied a `providerName` label that did not do any chunking).
 @Module({
-  imports: [LlmsModule],
   providers: [ChunkingService],
   exports: [ChunkingService],
 })
-export class ChunkingModule { }
+export class ChunkingModule {}

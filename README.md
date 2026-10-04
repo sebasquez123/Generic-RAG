@@ -1,248 +1,208 @@
-# Generic RAG
+# GenRag MVP
 
-NestJS API for the ingestion and retrieval foundation of a RAG system.
-
-This project is not a chat API. The first stage is only about preparing knowledge for later retrieval: ingest PDFs and custom-shaped structured data, format them into stable chunks, transform those chunks into embeddings, and store them in Postgres + pgvector.
-
-LangGraph is the intended orchestration layer for this MVP ingestion workflow. The graph should coordinate the path:
+NestJS microservice that turns documents into retrievable, citable evidence for an **external** LLM server.
 
 ```text
-source input -> formatting -> embedding -> pgvector storage -> ingestion receipt
+Server-side UI (/ui) ─┐
+External client ──────┴─> Ingestion API ─> VALIDATION ─> PARSING (+normalisation) ─> CHUNKING ─> EMBEDDING (Gemini) ─> STORAGE (pgvector)
+
+External LLM server ─> POST /search ─> query embedding ─> filtered vector search ─> threshold / dedupe / top-K ─> chunks + metadata + citations
 ```
 
-Prisma, relational Postgres modules, selectable answer-generation engines, and chat flows are intentionally out of scope.
+The service never generates the final answer. It returns evidence (content, score, citation and metadata) and says explicitly when there is none (`found: false`), so the LLM server can ground and cite its answer.
 
-![Proyect preview](assets/images/cover.jpeg)
+## Quick start
 
-## Current Endpoints
+```bash
+cp .env.example .env          # fill DB_*, GEMINI_API_KEY, ...
+docker compose up -d          # Postgres + pgvector + API
+open http://localhost:${APP_PORT}/ui                 # ingestion console
+open http://localhost:${APP_PORT}/client-api/swagger # API reference
+```
 
-Default prefix: `api/v1`
+Without Docker: `npm install --legacy-peer-deps && npm run build && node dist/main.js` (or `npm run dev`) (needs a Postgres with the `vector` extension).
 
-- `GET /api/v1/ingestion/lineup`
-  Returns the initialized ingestion composition.
-- `POST /api/v1/ingestion/text`
-  Validates text input with Zod, chunks it, embeds it, and stores it through the pgvector storage module when configured.
-- `GET /api/v1/query/lineup`
-  Returns the current retrieval/query composition.
-- `POST /api/v1/query/fetch`
-  Validates a retrieval query with Zod and returns retrieved, scored contexts.
+## HTTP API (prefix `/api/v1`)
 
-Current text ingestion example:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/documents` | Upload (multipart `file` + optional `namespace`, `source`, `document_type`, `metadata` JSON, `tags`, `ingest=true`). Deduplicated by SHA-256 per namespace: re-uploading returns `200` + `duplicate: true` and the existing id. |
+| `POST` | `/documents/{id}/ingest` | Run the pipeline. `202` + background by default (poll `GET /documents/{id}`); `{"wait": true}` runs synchronously. Skipped (`started: false, reason: "already_ingested"`) when chunking/embedding versions are unchanged, unless `{"force": true}`. Optional `chunking: {strategy, chunk_size, chunk_overlap, table_max_rows_per_chunk}`. |
+| `GET` | `/documents/{id}` | Status, current stage, progress (`chunks_embedded/chunks_total`), error with stage, system metadata, `requires_reindex`. |
+| `GET` | `/documents?namespace=&status=&limit=&offset=` | List. |
+| `GET` | `/documents/{id}/chunks` | Stored chunks, for traceability. |
+| `DELETE` | `/documents/{id}` | Deletes the document and its chunks (`409` while processing). |
+| `POST` | `/search` | Retrieval API for external servers. |
+
+Legacy endpoints (`POST /ingestion/text|pdf|structured`, `POST /query/fetch`) still work and delegate to the same use cases.
+
+### Search contract
 
 ```json
+POST /api/v1/search
 {
-  "source": "notes/day-1.md",
-  "content": "A document or structured-data projection ready for chunking."
+  "query": "¿Cuál fue la facturación de 2025?",
+  "top_k": 5,
+  "min_score": 0.6,
+  "namespace": "default",
+  "order_by": "score",
+  "filters": {
+    "document_ids": [], "document_types": ["xlsx"], "sources": [],
+    "tags": ["finanzas"], "sheets": ["Facturación"], "metadata": { "year": 2025 }
+  }
 }
 ```
 
-Current retrieval example:
-
 ```json
 {
-  "question": "What does the stored content say about ingestion?",
-  "contextLimit": 5
+  "query": "¿Cuál fue la facturación de 2025?",
+  "namespace": "default",
+  "found": true,
+  "message": null,
+  "results": [
+    {
+      "rank": 1,
+      "chunk_id": "…", "document_id": "…",
+      "content": "Row 5: Año: 2025 | Región: Norte | Facturación USD: 1250000 | …",
+      "score": 0.8123,
+      "citation": "ventas.xlsx, sheet \"Facturación\", rows 4-6, section \"Reporte de facturación anual\"",
+      "metadata": {
+        "document_name": "ventas.xlsx", "document_type": "xlsx", "source": "finanzas/ventas.xlsx", "tags": ["finanzas"],
+        "page_start": null, "page_end": null, "section": "Reporte de facturación anual", "sheet": "Facturación",
+        "chunk_index": 1, "chunk_type": "table_rows", "created_at": "…",
+        "chunk": { "row_start": 4, "row_end": 6, "columns": ["Año", "Región", "Facturación USD", "Fecha cierre"] },
+        "document": { "year": 2025 }
+      }
+    }
+  ],
+  "retrieval": { "top_k": 5, "min_score": 0.6, "candidates": 20, "below_threshold": 17, "duplicates_removed": 0, "embedding_version": "gemini:gemini-embedding-001:768", "took_ms": 212 }
 }
 ```
 
-## Getting Started
+- Results below `min_score` are dropped; the list is **never padded** to `top_k`.
+- `found: false` means there is no sufficient evidence; the LLM should not answer from this knowledge base.
+- `order_by: "document"` returns the same results grouped by document in reading order (`rank` keeps relevance).
+- Namespaces are isolated (tenant boundary).
 
-### Prerequisites
-- Docker & Docker Compose
-- Node.js 18+
-- npm
+## Pipeline design
 
-### Environment Setup
+### Parsing (one adapter per format, `1_ingestion-api/application/formats`)
 
-1. **Copy environment file**:
-```bash
-cp .env.example .env
-```
+| Format | Parser | What is preserved |
+| --- | --- | --- |
+| PDF | `pdf-parse` (pdf.js) | Page per block, paragraphs rebuilt from visual lines, de-hyphenation, heading detection (numbered / ALL CAPS), repeated headers/footers and page numbers removed, document title/author. Image-only PDFs fail with `PDF_NO_TEXT` (no OCR). |
+| XLSX | `exceljs` | Workbook → sheets → tables split by blank rows; header row detection (generated `Column A…` otherwise), title rows as table caption, formulas as their result, dates as ISO, empty columns dropped. |
+| TXT/MD | built-in | Encoding (UTF-8 BOM, UTF-16, strict UTF-8, fallback Windows-1252), markdown and heuristic headings, paragraphs. |
+| JSON | built-in | Arrays of objects → tables; nested objects → `field.path: value` lines (legacy `/ingestion/structured`). |
 
-2. **Edit `.env`** with your configuration:
-```bash
-DB_PASSWORD=your_secure_password_here
-OPENAI_API_KEY=sk-your-key
-GEMINI_API_KEY=your-key
-```
+### Chunking (`2_chunker`, version `chunker-v1`)
 
-### Running with Docker
+- **Prose (`recursive`)**: section-aware (a chunk never mixes two sections); units split on paragraph → line → sentence → word boundaries, greedily packed up to `chunk_size`, with sentence-aligned `chunk_overlap`. A tiny trailing chunk is merged into the previous one. Every chunk carries `page_start/page_end`, `section` and `heading_path`.
+- **Tables (`table`)**: one `table_summary` chunk per table (sheet, caption, columns, row range) plus `table_rows` chunks of up to `table_max_rows_per_chunk` rows, each row rendered as `Row N: Header: value | …` so every chunk is self-describing.
+- `auto` (default) picks per block. Empty/punctuation-only chunks and exact duplicates are dropped.
+- The text sent to the embedding model is `Document / Sheet / Section` context + content; the **stored** content stays clean for quoting.
 
-**Start all services** (PostgreSQL + pgvector + API):
-```bash
-docker-compose up -d
-```
+### Metadata model
 
-**View logs**:
-```bash
-docker-compose logs -f api        # API logs
-docker-compose logs -f db         # Database logs
-docker-compose logs -f            # All logs
-```
+| Layer | Where | Examples |
+| --- | --- | --- |
+| Document metadata | `rag_source_documents.metadata`, `tags` | caller-provided facts (`year`, `area`…), filterable with `filters.metadata` / `filters.tags` |
+| Chunk metadata | `rag_document_chunks` columns + `metadata` | `page_start/end`, `section`, `sheet`, `chunk_index`, `chunk_type`, `row_start/end`, `columns`, `heading_path` |
+| System metadata | `rag_source_documents` | `content_hash`, `status`, `stage`, `error{stage,code,message}`, `progress`, `parser_info` (pages, encoding, sheets, warnings), `chunking{version,…}`, `embedding{provider,model,dimensions,version}` |
 
-**Stop all services**:
-```bash
-docker-compose down
-```
+Document fields are joined at query time instead of being copied into every chunk.
 
-**Stop and remove volumes** (clean database):
-```bash
-docker-compose down -v
-```
+### Embeddings (`4_embedding`)
 
-### Development Server
+`EmbeddingService` (batching, empty-input guard, dimension and finiteness checks) depends on `EmbeddingProviderPort`. Adapters:
 
-**Without Docker** (requires local PostgreSQL + pgvector):
-```bash
-npm run dev
-```
+- `gemini` (default): REST `batchEmbedContents` through the existing `HttpClientService`; `RETRIEVAL_DOCUMENT` vs `RETRIEVAL_QUERY` task types, `outputDimensionality`, up to 100 inputs per request, exponential backoff with jitter on 408/429/5xx/network errors honouring `Retry-After`; 4xx errors fail fast without leaking the key.
+- `hashing`: deterministic lexical stand-in used by tests and offline smoke runs. **Not semantic — never use it in real environments.**
 
-**API runs at**: `http://localhost:3030`
+The embedding **version** (`provider:model:dimensions`) is stored per chunk. Search only compares vectors of the current version, and documents embedded with another version report `requires_reindex: true`. Changing provider/model means: change config → re-ingest with `force: true`.
 
-### Database Connection
+### Storage (`7_storage` + `database/vector`)
 
-- **Host**: `localhost:9532` (or `db:5432` inside Docker)
-- **User**: `phit_user`
-- **Database**: `phit-local`
-- **Password**: Value from `.env` `DB_PASSWORD`
+Postgres + pgvector (existing stack). Schema is bootstrapped on startup from `src/modules/database/vector/schema.ts`:
 
-## MVP Scope
+- `rag_source_documents` (unique `namespace + content_hash`, original bytes kept so ingestion can be re-run).
+- `rag_document_chunks` (FK with cascade delete, unique `document_id + chunk_index`, `vector(RAG_EMBEDDING_DIMENSIONS)`, HNSW cosine index).
+- Chunk replacement and the `COMPLETED` transition happen in **one transaction**: a failed run never leaves partial, searchable data; a failed re-ingestion keeps the previous version.
+- Startup fails if the table dimension differs from `RAG_EMBEDDING_DIMENSIONS`.
+- Search sets `hnsw.ef_search` and, on pgvector ≥ 0.8, `hnsw.iterative_scan` so metadata filters do not starve top-K.
+- The legacy `rag_documents` table is no longer used (its rows cannot be traced to a document). Drop it once nothing reads it.
 
-The first useful version should do only this:
+### Idempotency and states
 
-- Accept PDF input.
-- Accept structured data with caller-defined shape.
-- Normalize PDFs and structured records into one shared formatted chunk contract.
-- Preserve metadata such as PDF page numbers and structured field paths.
-- Generate embeddings through one internal embedding module.
-- Store embedded chunks in pgvector.
-- Use LangGraph to orchestrate the ingestion flow once the node contracts are ready.
+`PENDING → PROCESSING → COMPLETED | FAILED`. The move to `PROCESSING` is an atomic conditional update (concurrent ingest requests get `409`); a run stuck in `PROCESSING` longer than `RAG_PROCESSING_STALE_MS` (e.g. after a crash) can be claimed again.
 
-Anything outside that path should wait unless it directly improves ingestion quality, storage correctness, or retrieval confidence.
+### Observability
 
-## Module Map
+Structured pino logs (with request `traceId`) for: document received / duplicate, each stage `started` / `completed` with `durationMs`, `Ingestion completed|failed` (with `stage` and `code`), embedding retries, and `Retrieval completed` (candidates, returned, below threshold, best score, latency). Stage timings are also stored in `progress.timings_ms`.
+
+## Configuration
+
+Required keys are those in `.env.example` (validated at startup). RAG tuning is optional; defaults live in `src/config.ts`:
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `RAG_VECTOR_DATABASE_URL` | built from `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME` | Postgres with pgvector |
+| `GEMINI_API_KEY` | — | required for `gemini` |
+| `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/models` | |
+| `GEMINI_EMBEDDING_PROVIDER` | `gemini-embedding-001` | embedding model |
+| `RAG_EMBEDDING_PROVIDER` | `gemini` | `gemini` \| `hashing` (tests only) |
+| `RAG_EMBEDDING_DIMENSIONS` | `768` | must match the table |
+| `RAG_EMBEDDING_BATCH_SIZE` / `_MAX_RETRIES` / `_RETRY_BASE_DELAY_MS` / `_TIMEOUT_MS` | `50` / `5` / `1000` / `60000` | |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` / `RAG_CHUNK_MIN_CHARS` | `1200` / `200` / `40` | characters |
+| `RAG_TABLE_MAX_ROWS_PER_CHUNK` | `20` | |
+| `RAG_SEARCH_DEFAULT_TOP_K` / `RAG_SEARCH_MAX_TOP_K` | `5` / `50` | |
+| `RAG_SEARCH_MIN_SCORE` | `0.6` | cosine similarity; **calibrate** with real queries |
+| `RAG_SEARCH_CANDIDATE_MULTIPLIER` / `RAG_HNSW_EF_SEARCH` | `4` / `100` | |
+| `RAG_DEFAULT_NAMESPACE` | `default` | |
+| `RAG_MAX_FILE_BYTES` / `RAG_MAX_CHUNKS_PER_DOCUMENT` | 25 MB / `5000` | cost guards |
+| `RAG_PROCESSING_STALE_MS` | 15 min | |
+
+## Module map
 
 ```text
 src/
   modules/
-    ingestion-api/
-      presentation/        Controllers, DTOs, and Zod validation for ingestion
-      application/         PDF/text/structured-data ingestion use cases
-      domain/              Ingested document contracts
-      adapters/pdf/        PDF parsing adapter boundary
-
-    formatter/
-      application/         Converts PDFs and structured data into chunk contracts
-
-    embedding/
-      application/         Single internal text-to-vector embedding service
-      domain/              Embedding vector types
-
-    storage/
-      application/         Storage ports and storage service
-      adapters/postgres/   pgvector document repository
-
-    database/
-      vector/              Direct Postgres connection for pgvector operations
-
-    langgraph/
-      domain/              Semantic graph state types
-      application/         Graph orchestration port and service
-      adapters/langchain/  LangGraph/LangChain adapter boundary
-
-    query-api/
-      presentation/        Controllers, DTOs, and Zod validation for retrieval
-      application/         Query normalization and context fetching use case
-      domain/              Semantic query entity and query policy
-
-    retrieval/
-      application/         Retrieval service over storage
-
-    scoring/
-      application/         Context scoring and ranking services
-
-  shared/
-    types/                 Cross-module semantic pipeline contracts
-    middleware/            Request context and guard skeletons
-```
-
-## Architectural Direction
-
-- `ingestion-api` is the API-facing module for knowledge ingestion.
-- `formatter` owns conversion from raw input into stable chunk contracts.
-- `embedding` is deliberately small: it turns text into vectors and exposes no controller.
-- `storage` owns pgvector persistence through ports and adapters.
-- `database/vector` owns connection concerns only.
-- `langgraph` will orchestrate the ingestion workflow, not chat generation.
-- `query-api`, `retrieval`, and `scoring` support retrieval checks over stored content.
-
-The project should keep clean architecture boundaries:
-
-- Controllers validate and delegate.
-- Application services coordinate use cases.
-- Domain files describe stable contracts and policies.
-- Adapters isolate external concerns such as PDF parsing, LangGraph, and pgvector.
-
-## Out Of Scope
-
-- Chat completions.
-- Multi-provider answer generation.
-- Prisma.
-- Relational database modules.
-- User/account CRUD.
-- Large roadmap changes that do not advance PDF or structured-data ingestion.
-
-## Scheduled Agent Reports
-
-Automated Codex scheduled jobs are governed by `AGENT.md`.
-
-Only three scheduled report agents are expected:
-
-- Code Journey Consultant: writes dated next-step guidance in `aadr/consultant`.
-- Safety Watcher: writes dated security and performance review notes in `aadr/watcher`.
-- Good Practice And Consistency Supervisor: writes dated culture and consistency notes in `aadr/supervisor`.
-
-Each agent must check the latest previous report in its own folder. If that report is not `Status: GREEN`, the agent must stop and write only a blocked report for the current date.
-
-## Installed Core Packages
-
-- NestJS
-- `pg` for direct Postgres/pgvector access
-- Zod for request validation
-- `@langchain/core`
-- `@langchain/langgraph`
-
-## Environment
-
-```bash
-RAG_VECTOR_DATABASE_URL="postgresql://user:password@localhost:5432/rag_api"
-```
-
-`RAG_VECTOR_DATABASE_URL` is used only by the storage/database vector path for pgvector-oriented queries and writes.
-
-## Running
-
-```bash
-npm install
-npm run start:dev
+    1_ingestion-api/   presentation (DocumentsController, legacy IngestionController, Zod schemas, mappers)
+                       application (DocumentsService, DocumentIngestionService pipeline, format adapters)
+                       domain (errors with codes, type policy, normalisation, table structure)
+    2_chunker/         ChunkingService + pure boundary-aware packing (domain/text-units.ts)
+    3_langgraph/       placeholder ports (not wired; the linear pipeline does not need a graph yet)
+    4_embedding/       EmbeddingService, provider port, gemini + hashing adapters
+    5_LLM's/           LLM providers (not used by ingestion/retrieval)
+    6_http/            shared HTTP client
+    7_storage/         storage ports + pgvector repository
+    8_ui/              server-side ingestion console (static page over the public API)
+    database/vector/   pool, schema bootstrap, transactions
+    query-api/         POST /search, legacy /query/fetch, query policy
+    retrieval/         query embedding + candidate retrieval
+    scoring/           threshold, dedupe, top-K, ordering
+  shared/              config module, types, logging, filters, validation
 ```
 
 ## Testing
 
 ```bash
-npm run lint
-npm run build
-npm test
-npm run test:e2e
+npm test            # unit: parsers, chunking, scoring, embeddings (incl. Gemini retry/error mapping)
+npm run test:e2e    # full HTTP pipeline: PDF/XLSX/TXT -> ingest -> /search (in-memory storage, hashing embedder)
+RAG_TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/db npm run test:int   # real pgvector repository
+npx tsc --noEmit -p tsconfig.json && npm run lint && npm run build
 ```
 
-## Next Implementation Steps
+`test:int` drops and recreates the RAG tables of the target database: point it at a disposable database.
 
-- Define the shared formatted chunk contract for PDF pages and structured-data field paths.
-- Add `POST /api/v1/ingestion/pdf`.
-- Add `POST /api/v1/ingestion/structured`.
-- Implement PDF extraction inside `src/modules/ingestion-api/adapters/pdf`.
-- Add formatter methods for PDF blocks and structured records.
-- Replace the placeholder embedding logic with the single project-standard embedding provider.
-- Add pgvector schema guidance for `rag_documents(source, content, embedding, metadata)`.
-- Build the LangGraph `StateGraph` for route source -> format -> embed -> store -> receipt.
+## Known limitations / next steps
+
+- No OCR for scanned PDFs; no `.xls`, `.csv` or `.docx` yet.
+- Background ingestion runs in-process (tracked and awaited on shutdown). For volume, move `DocumentIngestionService.start` behind a queue.
+- The API has no authentication (the JWT middleware in `shared/middleware` is not wired). Put the service behind the internal network / gateway or wire an API-key guard before exposing it.
+- `RAG_SEARCH_MIN_SCORE` must be calibrated against real Gemini scores for your corpus.
+- Hybrid (keyword + vector) search and reranking are natural extensions of `ScoringService`.
+
+## Scheduled Agent Reports
+
+Automated Codex scheduled jobs are governed by `AGENT.md` (Code Journey Consultant → `aadr/consultant`, Safety Watcher → `aadr/watcher`, Good Practice And Consistency Supervisor → `aadr/supervisor`). Each agent must check the latest previous report in its own folder; if it is not `Status: GREEN`, the agent writes only a blocked report for the current date.

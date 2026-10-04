@@ -1,45 +1,71 @@
+import { IngestionStage } from '~/shared/types/semantic-pipeline.type';
 
-enum DomainErrorCodes {
-  PDF_NO_FORMATTED = 'PDF_NO_FORMATTED',
-  CUSTOM_JSON_NO_FORMATTED = 'CUSTOM_JSON_NO_FORMATTED',
-  TEXT_NO_FORMATTED = 'TEXT_NO_FORMATTED',
+export enum DomainErrorCodes {
+  UNSUPPORTED_DOCUMENT_TYPE = 'UNSUPPORTED_DOCUMENT_TYPE',
+  INVALID_DOCUMENT = 'INVALID_DOCUMENT',
+  DOCUMENT_NOT_FOUND = 'DOCUMENT_NOT_FOUND',
+  DOCUMENT_BUSY = 'DOCUMENT_BUSY',
+  PDF_NO_TEXT = 'PDF_NO_TEXT',
+  PDF_ENCRYPTED = 'PDF_ENCRYPTED',
+  PDF_INVALID = 'PDF_INVALID',
+  XLSX_INVALID = 'XLSX_INVALID',
+  XLSX_EMPTY = 'XLSX_EMPTY',
+  TEXT_EMPTY = 'TEXT_EMPTY',
+  JSON_INVALID = 'JSON_INVALID',
+  NO_CHUNKS = 'NO_CHUNKS',
+  TOO_MANY_CHUNKS = 'TOO_MANY_CHUNKS',
+  STAGE_FAILED = 'STAGE_FAILED',
 }
 
-export class PDFNoFormattedError extends Error {
-  public readonly code: string;
-  constructor(
-    message: string,
-    public readonly source?: string,
-    public readonly agent?: string,
-    public readonly task?: string,
-  ) {
-    super(message);
-    this.code = DomainErrorCodes.PDF_NO_FORMATTED;
+/** Rejected before any processing: wrong type, empty, too large, corrupt magic bytes. */
+export class UnsupportedDocumentTypeError extends Error {
+  public readonly code = DomainErrorCodes.UNSUPPORTED_DOCUMENT_TYPE;
+}
+
+export class InvalidDocumentError extends Error {
+  public readonly code = DomainErrorCodes.INVALID_DOCUMENT;
+}
+
+export class DocumentNotFoundError extends Error {
+  public readonly code = DomainErrorCodes.DOCUMENT_NOT_FOUND;
+  constructor(public readonly documentId: string) {
+    super(`Document ${documentId} not found`);
   }
 }
 
-export class CustomJsonNoFormattedError extends Error {
-  public readonly code: string;
+export class DocumentBusyError extends Error {
+  public readonly code = DomainErrorCodes.DOCUMENT_BUSY;
+}
+
+/** Content-level failure raised by a parser (the file is valid but unusable). */
+export class DocumentParsingError extends Error {
   constructor(
+    public readonly code: DomainErrorCodes,
     message: string,
-    public readonly source?: string,
-    public readonly agent?: string,
-    public readonly task?: string,
   ) {
     super(message);
-    this.code = DomainErrorCodes.CUSTOM_JSON_NO_FORMATTED;
   }
 }
 
-export class TextNoFormattedError extends Error {
-  public readonly code: string;
+export class ChunkingOutcomeError extends Error {
   constructor(
+    public readonly code: DomainErrorCodes,
     message: string,
-    public readonly source?: string,
-    public readonly agent?: string,
-    public readonly task?: string,
   ) {
     super(message);
-    this.code = DomainErrorCodes.TEXT_NO_FORMATTED;
+  }
+}
+
+/** Wraps any failure with the pipeline stage where it happened. */
+export class IngestionStageError extends Error {
+  public readonly code: string;
+  constructor(
+    public readonly stage: IngestionStage,
+    cause: unknown,
+  ) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(`[${stage}] ${message}`, { cause });
+    const code = (cause as { code?: unknown })?.code;
+    this.code = typeof code === 'string' ? code : DomainErrorCodes.STAGE_FAILED;
   }
 }

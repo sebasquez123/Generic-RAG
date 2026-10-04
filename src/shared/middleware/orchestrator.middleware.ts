@@ -5,7 +5,7 @@ import { verify, VerifyOptions } from 'jsonwebtoken';
 import config from '~/config';
 import { LoggerService } from '~/shared/logging/main.logger';
 import { setTemporaryContext } from '~/shared/middleware/context/global-context';
-import { BotEntity, getBotInfoRepository } from 'dummy_auth_db_form';
+import { BotEntity, getBotInfoRepository } from './auth/dummy-auth.repository';
 
 const logger = new LoggerService('AuthMiddleware');
 @Injectable()

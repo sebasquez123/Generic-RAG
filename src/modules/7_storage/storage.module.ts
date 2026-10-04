@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { PgVectorDocumentRepository } from './adapters/postgres/pgvector-document.repository';
-import { DOCUMENT_STORAGE_REPOSITORY } from './application/ports/storage.tokens';
+import {
+  DOCUMENT_REGISTRY_REPOSITORY,
+  DOCUMENT_STORAGE_REPOSITORY,
+} from './application/ports/storage.tokens';
 import { StorageService } from './application/services/storage.service';
 
 @Module({
@@ -11,6 +14,10 @@ import { StorageService } from './application/services/storage.service';
     StorageService,
     {
       provide: DOCUMENT_STORAGE_REPOSITORY,
+      useExisting: PgVectorDocumentRepository,
+    },
+    {
+      provide: DOCUMENT_REGISTRY_REPOSITORY,
       useExisting: PgVectorDocumentRepository,
     },
   ],
