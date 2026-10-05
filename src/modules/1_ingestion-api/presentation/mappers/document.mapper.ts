@@ -29,6 +29,8 @@ export function toDocumentResponse(
       timings_ms: document.progress?.timingsMs ?? {},
     },
     error: document.error ?? null,
+    // Worker claims of the current ingestion request (crash recoveries included).
+    attempts: document.attempts,
     chunk_count: document.chunkCount,
     requires_reindex: requiresReindex,
     system: {

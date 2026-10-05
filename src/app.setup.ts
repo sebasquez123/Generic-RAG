@@ -9,7 +9,10 @@ export function configureApp(
   // Legacy /ingestion/text and /ingestion/structured carry content in JSON.
   app.useBodyParser('json', { limit: '10mb' });
   app.setGlobalPrefix('api/v1', {
-    exclude: [{ path: 'ui', method: RequestMethod.GET }],
+    exclude: [
+      { path: 'ui', method: RequestMethod.GET },
+      { path: 'health', method: RequestMethod.GET },
+    ],
   });
   return app;
 }

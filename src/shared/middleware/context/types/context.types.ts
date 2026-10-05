@@ -21,6 +21,8 @@ export interface TemporaryContext {
   botInfo?: BotEntity;
   contract?: BotContract;
   route?: string;
+  /** Name of the API key that authenticated the request (never the key). */
+  principal?: string;
 
   traceId: string;
   startTime: [number, number];
@@ -29,6 +31,5 @@ export interface TemporaryContext {
     referer: string | undefined;
     userAgent: string | undefined;
     domain?: string;
-    headers?: Record<string, string | string[] | undefined>;
   };
 }

@@ -24,6 +24,8 @@ import { EmbeddingProviderNotConfiguredError } from './domain/errors/embedding_e
               timeoutMs: rag.embedding.timeoutMs,
               maxRetries: rag.embedding.maxRetries,
               retryBaseDelayMs: rag.embedding.retryBaseDelayMs,
+              queryTimeoutMs: rag.embedding.queryTimeoutMs,
+              queryMaxRetries: rag.embedding.queryMaxRetries,
             });
           case 'hashing':
             return new HashingEmbeddingAdapter(rag.embedding.dimensions);

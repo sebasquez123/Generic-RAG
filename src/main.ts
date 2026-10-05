@@ -24,6 +24,7 @@ async function bootstrap() {
       'Document ingestion (PDF/XLSX/TXT/JSON) and semantic retrieval',
     )
     .setVersion(config.app.version)
+    .addApiKey({ type: 'apiKey', in: 'header', name: 'x-api-key' }, 'api-key')
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('client-api/swagger', app, document, {});

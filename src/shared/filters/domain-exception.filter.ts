@@ -18,8 +18,13 @@ const STATUS_BY_CODE: Record<string, HttpStatus> = {
   INVALID_CHUNKING_OPTIONS: HttpStatus.BAD_REQUEST,
   DOCUMENT_NOT_FOUND: HttpStatus.NOT_FOUND,
   DOCUMENT_BUSY: HttpStatus.CONFLICT,
+  NAMESPACE_FORBIDDEN: HttpStatus.FORBIDDEN,
+  NAMESPACE_REQUIRED: HttpStatus.BAD_REQUEST,
+  INGESTION_QUEUE_FULL: HttpStatus.TOO_MANY_REQUESTS,
+  SEARCH_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
   EMBEDDING_EMPTY_INPUT: HttpStatus.BAD_REQUEST,
   EMBEDDING_PROVIDER_REQUEST_FAILED: HttpStatus.BAD_GATEWAY,
+  EMBEDDING_PROVIDER_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
   EMBEDDING_INVALID_PROVIDER_RESPONSE: HttpStatus.BAD_GATEWAY,
 };
 
@@ -42,6 +47,10 @@ export class DomainExceptionFilter implements ExceptionFilter {
         statusCode: status,
         code,
         message: (exception as Error).message,
+        // Lets agents tell "try again later" apart from "fix the request".
+        retryable:
+          status === HttpStatus.TOO_MANY_REQUESTS ||
+          status === HttpStatus.SERVICE_UNAVAILABLE,
       });
 
     logger.error(exception, 'Unhandled error');

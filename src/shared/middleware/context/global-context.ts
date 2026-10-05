@@ -19,7 +19,7 @@ export function setTemporaryContext(request: Request): TemporaryContext {
       referer: request.header('referer'),
       userAgent: request.header('user-agent'),
       domain: request.hostname,
-      headers: request.headers as Record<string, string | string[] | undefined>,
+      // Request headers are deliberately not kept: they carry API keys and cookies.
     },
   };
   asyncLocalStorage.enterWith(context);

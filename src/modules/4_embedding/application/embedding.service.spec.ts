@@ -116,7 +116,23 @@ describe('GeminiEmbeddingAdapter', () => {
       taskType: 'RETRIEVAL_DOCUMENT',
       outputDimensionality: 3,
     });
-    expect(options.params).toEqual({ key: 'test-key' });
+    // The key travels in a header, never in the URL/query string (logs, proxies).
+    expect(options.headers['x-goog-api-key']).toBe('test-key');
+    expect(options.params).toBeUndefined();
+    expect(options.timeout).toBe(baseConfig.timeoutMs);
+  });
+
+  it('uses the shorter query policy for search queries', async () => {
+    const post = jest.fn().mockRejectedValue(axiosError(503));
+    const adapter = new GeminiEmbeddingAdapter(
+      { post } as unknown as HttpClientService,
+      { ...baseConfig, queryTimeoutMs: 1234, queryMaxRetries: 2 },
+    );
+    await expect(adapter.embed(['q'], EmbeddingTask.Query)).rejects.toThrow(
+      'HTTP 503',
+    );
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[0][2].timeout).toBe(1234);
   });
 
   it('retries rate limits and transient errors, then succeeds', async () => {

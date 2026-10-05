@@ -21,6 +21,9 @@ export interface GeminiEmbeddingConfig {
   timeoutMs: number;
   maxRetries: number;
   retryBaseDelayMs: number;
+  /** Queries are latency-bound: shorter timeout, fewer attempts than ingestion. */
+  queryTimeoutMs?: number;
+  queryMaxRetries?: number;
 }
 
 interface GeminiBatchEmbeddingResponse {
@@ -75,16 +78,29 @@ export class GeminiEmbeddingAdapter implements EmbeddingProviderPort {
       })),
     };
 
+    const query = task === EmbeddingTask.Query;
+    const timeout = query
+      ? (this.config.queryTimeoutMs ?? this.config.timeoutMs)
+      : this.config.timeoutMs;
+    const maxAttempts = query
+      ? (this.config.queryMaxRetries ?? this.config.maxRetries)
+      : this.config.maxRetries;
+
     const response = await withRetry(
       () =>
         this.http.post<GeminiBatchEmbeddingResponse>(url, body, {
-          params: { key: this.config.apiKey },
-          headers: { 'content-type': 'application/json' },
-          timeout: this.config.timeoutMs,
+          // Header instead of ?key=: query strings end up in proxy and access logs.
+          headers: {
+            'content-type': 'application/json',
+            'x-goog-api-key': this.config.apiKey,
+          },
+          timeout,
         }),
       {
-        maxAttempts: this.config.maxRetries,
+        maxAttempts,
         baseDelayMs: this.config.retryBaseDelayMs,
+        // A query never waits long between attempts; ingestion can.
+        maxDelayMs: query ? 1000 : undefined,
         isRetryable: (error) => this.isRetryable(error),
         retryAfterMs: (error) => this.retryAfterMs(error),
         onRetry: (error, attempt, delayMs) =>

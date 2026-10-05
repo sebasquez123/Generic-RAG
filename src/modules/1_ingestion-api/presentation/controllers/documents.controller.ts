@@ -18,14 +18,16 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBody,
   ApiConsumes,
+  ApiSecurity,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import config from '~/config';
+import { CurrentPrincipal, RequireScope } from '~/shared/auth/api-key.guard';
+import type { Principal } from '~/shared/auth/principal';
 import { DomainExceptionFilter } from '~/shared/filters/domain-exception.filter';
-import { IngestionStatus } from '~/shared/types/semantic-pipeline.type';
 import { uuidSchema } from '~/shared/validation/common.schema';
 import { parseOrThrow } from '~/shared/validation/parse-or-throw';
 import { decodeFileName } from '../helpers/multipart';
@@ -44,6 +46,7 @@ import {
 } from '../validators/documents.schema';
 
 @ApiTags('Documents')
+@ApiSecurity('api-key')
 @Controller('documents')
 @UseFilters(DomainExceptionFilter)
 export class DocumentsController {
@@ -53,6 +56,7 @@ export class DocumentsController {
   ) {}
 
   @Post()
+  @RequireScope('write')
   @ApiOperation({
     summary: 'Upload a PDF, XLSX, TXT/MD or JSON document',
     description:
@@ -89,6 +93,7 @@ export class DocumentsController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: Record<string, unknown>,
     @Res({ passthrough: true }) response: Response,
+    @CurrentPrincipal() principal: Principal,
   ) {
     if (!file?.buffer)
       throw new BadRequestException(
@@ -103,6 +108,7 @@ export class DocumentsController {
         mimeType: file.mimetype,
       },
       namespace: input.namespace,
+      access: principal.namespaces,
       source: input.source,
       documentType: input.document_type,
       metadata: input.metadata,
@@ -110,12 +116,9 @@ export class DocumentsController {
     });
 
     let current = document;
-    // A duplicate upload of a file already being processed is still a valid upload.
-    if (
-      input.ingest &&
-      !(document.status === IngestionStatus.Processing && !created)
-    )
-      current = (await this.ingestion.start(document.id)).document;
+    // A duplicate upload of a file already queued/processing is still a valid upload.
+    if (input.ingest && !(this.ingestion.isBusy(document) && !created))
+      current = (await this.ingestion.start(document)).document;
 
     response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return {
@@ -128,6 +131,7 @@ export class DocumentsController {
   }
 
   @Post(':id/ingest')
+  @RequireScope('write')
   @ApiOperation({
     summary: 'Run the ingestion pipeline for a document',
     description:
@@ -166,16 +170,20 @@ export class DocumentsController {
     @Param('id') id: string,
     @Body() body: unknown,
     @Res({ passthrough: true }) response: Response,
+    @CurrentPrincipal() principal: Principal,
   ) {
     const documentId = parseOrThrow(uuidSchema, id);
     const input = parseOrThrow(ingestDocumentSchema, body ?? {});
-    const result = await this.ingestion.start(documentId, {
+    const document = await this.documents.get(documentId, principal.namespaces);
+    const result = await this.ingestion.start(document, {
       chunking: toChunkingOverrides(input.chunking),
       force: input.force,
       wait: input.wait,
     });
 
-    const accepted = result.started && !input.wait;
+    // wait=true that timed out is still running: answer 202 like the async path.
+    const accepted =
+      result.started && (!input.wait || this.ingestion.isBusy(result.document));
     response.status(accepted ? HttpStatus.ACCEPTED : HttpStatus.OK);
     return {
       started: result.started,
@@ -188,10 +196,17 @@ export class DocumentsController {
   }
 
   @Get()
+  @RequireScope('read')
   @ApiOperation({ summary: 'List documents (optionally by namespace/status)' })
-  async list(@Query() query: Record<string, unknown>) {
+  async list(
+    @Query() query: Record<string, unknown>,
+    @CurrentPrincipal() principal: Principal,
+  ) {
     const input = parseOrThrow(listDocumentsSchema, query);
-    const { items, total } = await this.documents.list(input);
+    const { items, total } = await this.documents.list(
+      input,
+      principal.namespaces,
+    );
     return {
       total,
       limit: input.limit,
@@ -203,11 +218,15 @@ export class DocumentsController {
   }
 
   @Get(':id')
+  @RequireScope('read')
   @ApiOperation({
     summary: 'Document status, progress, error stage and system metadata',
   })
-  async get(@Param('id') id: string) {
-    const document = await this.documents.get(parseOrThrow(uuidSchema, id));
+  async get(@Param('id') id: string, @CurrentPrincipal() principal: Principal) {
+    const document = await this.documents.get(
+      parseOrThrow(uuidSchema, id),
+      principal.namespaces,
+    );
     return toDocumentResponse(
       document,
       this.ingestion.requiresReindex(document),
@@ -215,16 +234,19 @@ export class DocumentsController {
   }
 
   @Get(':id/chunks')
+  @RequireScope('read')
   @ApiOperation({
     summary: 'Inspect stored chunks of a document (traceability)',
   })
   async chunks(
     @Param('id') id: string,
     @Query() query: Record<string, unknown>,
+    @CurrentPrincipal() principal: Principal,
   ) {
     const input = parseOrThrow(listChunksSchema, query);
     const { items, total } = await this.documents.listChunks(
       parseOrThrow(uuidSchema, id),
+      principal.namespaces,
       input.limit,
       input.offset,
     );
@@ -237,9 +259,16 @@ export class DocumentsController {
   }
 
   @Delete(':id')
+  @RequireScope('delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a document and all of its chunks' })
-  async remove(@Param('id') id: string) {
-    await this.documents.delete(parseOrThrow(uuidSchema, id));
+  async remove(
+    @Param('id') id: string,
+    @CurrentPrincipal() principal: Principal,
+  ) {
+    await this.documents.delete(
+      parseOrThrow(uuidSchema, id),
+      principal.namespaces,
+    );
   }
 }

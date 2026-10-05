@@ -1,38 +1,26 @@
-import { Inject, Injectable, OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { RagConfig } from '~/config';
 import { ChunkingService } from '~/modules/2_chunker/application/chunking.service';
 import { EmbeddingService } from '~/modules/4_embedding/application/embedding.service';
 import { StorageService } from '~/modules/7_storage/application/services/storage.service';
 import { RAG_CONFIG } from '~/shared/config/rag-config.module';
-import { LoggerService } from '~/shared/logging/main.logger';
 import {
-  IngestionStage,
   IngestionStatus,
   type ChunkingDescriptor,
   type ChunkingOptions,
   type DocumentRecord,
-  type DocumentType,
-  type IngestionProgress,
 } from '~/shared/types/semantic-pipeline.type';
 import {
-  ChunkingOutcomeError,
   DocumentBusyError,
-  DomainErrorCodes,
-  IngestionStageError,
-  InvalidDocumentError,
+  IngestionQueueFullError,
 } from '../domain/errors/domain_errors';
-import { assertContentMatchesType } from '../domain/services/document-type.policy';
-import { DocumentsService } from './documents.service';
-import {
-  INGESTION_ADAPTERS,
-  type IngestionFormatPort,
-} from './ports/ingestion-format.port';
+import { IngestionWorker } from './ingestion.worker';
 
 export interface StartIngestionOptions {
   chunking?: Partial<ChunkingOptions>;
   /** Re-run even if the document is already ingested with the same versions. */
   force?: boolean;
-  /** Await the pipeline instead of running it in the background. */
+  /** Wait (up to RAG_INGESTION_WAIT_TIMEOUT_MS) for the queued run to finish. */
   wait?: boolean;
 }
 
@@ -42,53 +30,55 @@ export interface StartIngestionResult {
   reason?: 'already_ingested';
 }
 
+const TERMINAL = new Set([IngestionStatus.Completed, IngestionStatus.Failed]);
+
 /**
- * Ingestion pipeline:
- *   VALIDATION -> PARSING (+normalisation) -> CHUNKING -> EMBEDDING -> STORAGE
- *
- * Each stage is logged and timed; a failure is recorded with the stage where
- * it happened. Chunks are persisted and the document marked COMPLETED in one
- * transaction, so a failed run never leaves partial, searchable data.
+ * Entry point of ingestion requests. It only decides whether a document needs
+ * (re)processing and queues it; the IngestionWorker runs the pipeline with
+ * bounded concurrency, crash recovery and retries.
  */
 @Injectable()
-export class DocumentIngestionService implements OnApplicationShutdown {
-  private readonly logger = new LoggerService(DocumentIngestionService.name);
-  private readonly inflight = new Set<Promise<void>>();
-
+export class DocumentIngestionService {
   constructor(
-    @Inject(INGESTION_ADAPTERS)
-    private readonly formatAdapters: IngestionFormatPort[],
-    private readonly documents: DocumentsService,
     private readonly chunker: ChunkingService,
     private readonly embedding: EmbeddingService,
     private readonly storage: StorageService,
+    private readonly worker: IngestionWorker,
     @Inject(RAG_CONFIG) private readonly config: RagConfig,
   ) {}
 
+  /** `document` must already be authorised for the caller. */
   async start(
-    id: string,
+    document: DocumentRecord,
     options: StartIngestionOptions = {},
   ): Promise<StartIngestionResult> {
-    const document = await this.documents.get(id);
     const chunking = this.chunker.resolveOptions(options.chunking);
 
     if (!options.force && this.isUpToDate(document, chunking))
       return { document, started: false, reason: 'already_ingested' };
+    if (this.isBusy(document)) throw this.busy(document.id);
 
-    const staleBefore = new Date(Date.now() - this.config.processingStaleMs);
-    const claimed = await this.storage.claimForProcessing(id, staleBefore);
-    if (!claimed)
-      throw new DocumentBusyError(`Document ${id} is already being processed`);
+    // Backpressure: refuse new work instead of letting the queue grow unbounded.
+    if ((await this.storage.countQueued()) >= this.config.ingestion.maxQueued)
+      throw new IngestionQueueFullError(
+        `Ingestion queue is full (${this.config.ingestion.maxQueued} documents); retry later`,
+      );
 
-    const run = this.run(claimed, chunking);
-    this.inflight.add(run);
-    void run.finally(() => this.inflight.delete(run));
+    const queued = await this.storage.enqueue(document.id, chunking);
+    if (!queued) throw this.busy(document.id);
+    this.worker.notify();
 
-    if (options.wait) {
-      await run;
-      return { document: await this.documents.get(id), started: true };
-    }
-    return { document: claimed, started: true };
+    if (!options.wait) return { document: queued, started: true };
+    return { document: await this.waitForOutcome(document.id), started: true };
+  }
+
+  /** Queued, or processing under a live lease. */
+  isBusy(document: DocumentRecord): boolean {
+    if (document.status === IngestionStatus.Queued) return true;
+    return (
+      document.status === IngestionStatus.Processing &&
+      (document.leaseUntil?.getTime() ?? 0) > Date.now()
+    );
   }
 
   /** True when the stored chunks were produced by the current pipeline versions. */
@@ -109,181 +99,31 @@ export class DocumentIngestionService implements OnApplicationShutdown {
   /** Document ingested with another embedding space is invisible to search. */
   requiresReindex(document: DocumentRecord): boolean {
     return (
-      document.status === IngestionStatus.Completed &&
+      document.chunkCount > 0 &&
       document.embedding?.version !== this.embedding.descriptor.version
     );
   }
 
-  async onApplicationShutdown(): Promise<void> {
-    if (this.inflight.size === 0) return;
-    this.logger.warn(
-      `Waiting for ${this.inflight.size} ingestion(s) before shutdown`,
-    );
-    await Promise.race([
-      Promise.allSettled([...this.inflight]),
-      new Promise((resolve) => setTimeout(resolve, 30_000)),
-    ]);
-  }
-
-  // Never throws: every failure is persisted on the document instead.
-  private async run(
-    document: DocumentRecord,
-    chunking: ChunkingDescriptor,
-  ): Promise<void> {
-    const progress: IngestionProgress = { timingsMs: {} };
-    const log = {
-      documentId: document.id,
-      namespace: document.namespace,
-      documentType: document.documentType,
-    };
-    const startedAt = Date.now();
-
-    const stage = async <T>(
-      name: IngestionStage,
-      work: () => Promise<T> | T,
-    ): Promise<T> => {
-      progress.stage = name;
-      await this.storage.updateProgress(document.id, name, progress);
-      this.logger.event(`${name} started`, { ...log, stage: name });
-      const stageStart = Date.now();
-      try {
-        const result = await work();
-        const durationMs = Date.now() - stageStart;
-        progress.timingsMs![name.toLowerCase() as Lowercase<IngestionStage>] =
-          durationMs;
-        this.logger.event(`${name} completed`, {
-          ...log,
-          stage: name,
-          durationMs,
-        });
-        return result;
-      } catch (error) {
-        throw new IngestionStageError(name, error);
-      }
-    };
-
-    try {
-      const buffer = await stage(IngestionStage.Validation, async () => {
-        const file = await this.storage.getDocumentFile(document.id);
-        if (!file)
-          throw new InvalidDocumentError('Stored file content is missing');
-        assertContentMatchesType(file, document.documentType);
-        return file;
-      });
-
-      const parsed = await stage(IngestionStage.Parsing, () =>
-        this.adapterFor(document.documentType).parse({
-          buffer,
-          fileName: document.name,
-          mimeType: document.mimeType,
-        }),
-      );
-
-      const chunks = await stage(IngestionStage.Chunking, () => {
-        const drafts = this.chunker.chunk(parsed, chunking);
-        if (drafts.length === 0)
-          throw new ChunkingOutcomeError(
-            DomainErrorCodes.NO_CHUNKS,
-            'Document produced no retrievable chunks',
-          );
-        if (drafts.length > this.config.maxChunksPerDocument)
-          throw new ChunkingOutcomeError(
-            DomainErrorCodes.TOO_MANY_CHUNKS,
-            `Document produced ${drafts.length} chunks (limit ${this.config.maxChunksPerDocument})`,
-          );
-        return drafts;
-      });
-      progress.chunksTotal = chunks.length;
-      progress.chunksEmbedded = 0;
-
-      const label =
-        parsed.title && parsed.title !== document.name
-          ? `${parsed.title} (${document.name})`
-          : document.name;
-      const vectors = await stage(IngestionStage.Embedding, () =>
-        this.embedding.embedDocuments(
-          chunks.map((chunk) => this.chunker.buildEmbeddingInput(label, chunk)),
-          async (embedded) => {
-            progress.chunksEmbedded = embedded;
-            await this.storage.updateProgress(
-              document.id,
-              IngestionStage.Embedding,
-              progress,
-            );
-          },
-        ),
-      );
-
-      await stage(IngestionStage.Storage, () =>
-        this.storage.commitIngestion(
-          document.id,
-          chunks.map((chunk, index) => ({
-            ...chunk,
-            embedding: vectors[index],
-          })),
-          {
-            parserInfo: {
-              ...parsed.info,
-              title: parsed.title,
-              warnings: parsed.warnings,
-            },
-            chunking,
-            embedding: this.embedding.descriptor,
-            progress: { ...progress, stage: undefined },
-          },
-        ),
-      );
-
-      this.logger.event('Ingestion completed', {
-        ...log,
-        chunks: chunks.length,
-        durationMs: Date.now() - startedAt,
-        embeddingVersion: this.embedding.descriptor.version,
-        chunkingVersion: chunking.version,
-      });
-    } catch (error) {
-      const failure =
-        error instanceof IngestionStageError
-          ? error
-          : new IngestionStageError(
-              progress.stage ?? IngestionStage.Validation,
-              error,
-            );
-      const cause =
-        failure.cause instanceof Error
-          ? failure.cause.message
-          : failure.message;
-
-      this.logger.eventError('Ingestion failed', {
-        ...log,
-        stage: failure.stage,
-        code: failure.code,
-        error: cause,
-        durationMs: Date.now() - startedAt,
-      });
-      await this.storage
-        .markFailed(
-          document.id,
-          {
-            stage: failure.stage,
-            code: failure.code,
-            message: cause,
-            at: new Date().toISOString(),
-          },
-          progress,
-        )
-        .catch((markError: unknown) =>
-          this.logger.error(markError, 'Could not persist ingestion failure'),
-        );
+  /**
+   * Polls until the run finishes. On timeout the current (still running)
+   * state is returned and the caller can keep polling GET /documents/{id}.
+   */
+  private async waitForOutcome(id: string): Promise<DocumentRecord> {
+    const deadline = Date.now() + this.config.ingestion.waitTimeoutMs;
+    let delay = 25;
+    for (;;) {
+      const document = await this.storage.findDocument(id);
+      if (!document) throw this.busy(id);
+      if (TERMINAL.has(document.status) || Date.now() >= deadline)
+        return document;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 500);
     }
   }
 
-  private adapterFor(type: DocumentType): IngestionFormatPort {
-    const adapter = this.formatAdapters.find(
-      (candidate) => candidate.type === type,
+  private busy(id: string) {
+    return new DocumentBusyError(
+      `Document ${id} is already queued or being processed`,
     );
-    if (!adapter)
-      throw new InvalidDocumentError(`No parser registered for type: ${type}`);
-    return adapter;
   }
 }

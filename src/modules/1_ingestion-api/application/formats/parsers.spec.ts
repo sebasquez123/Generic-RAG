@@ -12,13 +12,27 @@ import {
   TextIngestionAdapter,
   decodeText,
 } from './adapters/text/text-ingestion.adapter';
+import ExcelJS from 'exceljs';
+import config, { type RagConfig } from '~/config';
 import type {
   ParsedHeadingBlock,
   ParsedTableBlock,
 } from '~/shared/types/semantic-pipeline.type';
 
+const withLimits = (limits: Partial<RagConfig['limits']>) =>
+  ({ ...config.rag, limits: { ...config.rag.limits, ...limits } }) as RagConfig;
+
 describe('PdfIngestionAdapter', () => {
   const adapter = new PdfIngestionAdapter();
+
+  it('refuses PDFs above the page limit before extracting their text', async () => {
+    await expect(
+      new PdfIngestionAdapter(withLimits({ pdfMaxPages: 2 })).parse({
+        buffer: buildPdf(REPORT_PDF_PAGES),
+        fileName: 'largo.pdf',
+      }),
+    ).rejects.toMatchObject({ code: DomainErrorCodes.PDF_TOO_LARGE });
+  });
 
   it('keeps pages and headings and removes repeated headers and page numbers', async () => {
     const parsed = await adapter.parse({
@@ -107,6 +121,82 @@ describe('XlsxIngestionAdapter', () => {
         fileName: 'x.xlsx',
       }),
     ).rejects.toMatchObject({ code: DomainErrorCodes.XLSX_INVALID });
+  });
+
+  const workbookWith = async (build: (workbook: ExcelJS.Workbook) => void) => {
+    const workbook = new ExcelJS.Workbook();
+    build(workbook);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  };
+
+  it('keeps percentage and currency formats instead of bare numbers', async () => {
+    const buffer = await workbookWith((workbook) => {
+      const sheet = workbook.addWorksheet('Indicadores');
+      sheet.addRow(['Indicador', 'Valor', 'Monto']);
+      const row = sheet.addRow(['Margen', 0.153, 1250000]);
+      row.getCell(2).numFmt = '0.0%';
+      row.getCell(3).numFmt = '"$"#,##0.00';
+      const euros = sheet.addRow(['Coste', 0.5, -42.5]);
+      euros.getCell(2).numFmt = '0%';
+      euros.getCell(3).numFmt = '[$EUR-x-euro2] #,##0.00';
+    });
+    const parsed = await new XlsxIngestionAdapter().parse({
+      buffer,
+      fileName: 'k.xlsx',
+    });
+    expect(
+      (parsed.blocks[0] as ParsedTableBlock).rows.map((r) => r.cells),
+    ).toEqual([
+      ['Margen', '15.3%', '$1250000'],
+      ['Coste', '50%', '-EUR 42.5'],
+    ]);
+  });
+
+  it('skips hidden sheets by default and says so', async () => {
+    const buffer = await workbookWith((workbook) => {
+      workbook.addWorksheet('Visible').addRows([
+        ['A', 'B'],
+        ['1', '2'],
+      ]);
+      const secret = workbook.addWorksheet('Salarios', { state: 'hidden' });
+      secret.addRows([
+        ['Nombre', 'Salario'],
+        ['Ana', '9000'],
+      ]);
+    });
+    const parsed = await new XlsxIngestionAdapter().parse({
+      buffer,
+      fileName: 'h.xlsx',
+    });
+    expect(parsed.blocks.map((b) => (b as ParsedTableBlock).sheet)).toEqual([
+      'Visible',
+    ]);
+    expect(parsed.warnings.join(' ')).toContain(
+      '"Salarios" is hidden and was skipped',
+    );
+
+    const opted = await new XlsxIngestionAdapter(
+      withLimits({ xlsxIncludeHiddenSheets: true }),
+    ).parse({ buffer, fileName: 'h.xlsx' });
+    expect(opted.blocks).toHaveLength(2);
+  });
+
+  it('fails as a document (not as a process) when the workbook is too large', async () => {
+    const buffer = await buildSalesWorkbook();
+    await expect(
+      new XlsxIngestionAdapter(
+        withLimits({ xlsxMaxUncompressedBytes: 1000 }),
+      ).parse({
+        buffer,
+        fileName: 'big.xlsx',
+      }),
+    ).rejects.toMatchObject({ code: DomainErrorCodes.XLSX_TOO_LARGE });
+    await expect(
+      new XlsxIngestionAdapter(withLimits({ xlsxMaxCells: 5 })).parse({
+        buffer,
+        fileName: 'big.xlsx',
+      }),
+    ).rejects.toMatchObject({ code: DomainErrorCodes.XLSX_TOO_LARGE });
   });
 });
 

@@ -3,6 +3,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { RagConfig } from '~/config';
 import { StorageService } from '~/modules/7_storage/application/services/storage.service';
 import { RAG_CONFIG } from '~/shared/config/rag-config.module';
+import {
+  canAccessNamespace,
+  resolveNamespace,
+  type NamespaceAccess,
+} from '~/shared/auth/principal';
 import { LoggerService } from '~/shared/logging/main.logger';
 import {
   IngestionStatus,
@@ -23,6 +28,8 @@ import type { IngestionFileInput } from './ports/ingestion-format.port';
 export interface RegisterDocumentInput {
   file: IngestionFileInput;
   namespace?: string;
+  /** Namespaces granted to the caller's API key. */
+  access: NamespaceAccess;
   source?: string;
   documentType?: DocumentType;
   metadata?: Record<string, unknown>;
@@ -53,7 +60,11 @@ export class DocumentsService {
     );
     assertContentMatchesType(file.buffer, documentType);
 
-    const namespace = input.namespace ?? this.config.defaultNamespace;
+    const namespace = resolveNamespace(
+      input.access,
+      input.namespace,
+      this.config.defaultNamespace,
+    );
     const contentHash = createHash('sha256').update(file.buffer).digest('hex');
     const result = await this.storage.createDocument({
       id: randomUUID(),
@@ -82,28 +93,46 @@ export class DocumentsService {
     return result;
   }
 
-  async get(id: string): Promise<DocumentRecord> {
+  /**
+   * A document outside the caller's namespaces is reported as missing, so ids
+   * cannot be used to probe other tenants.
+   */
+  async get(id: string, access: NamespaceAccess): Promise<DocumentRecord> {
     const document = await this.storage.findDocument(id);
-    if (!document) throw new DocumentNotFoundError(id);
+    if (!document || !canAccessNamespace(access, document.namespace))
+      throw new DocumentNotFoundError(id);
     return document;
   }
 
-  list(query: {
-    namespace?: string;
-    status?: IngestionStatus;
-    limit: number;
-    offset: number;
-  }) {
-    return this.storage.listDocuments(query);
+  list(
+    query: {
+      namespace?: string;
+      status?: IngestionStatus;
+      limit: number;
+      offset: number;
+    },
+    access: NamespaceAccess,
+  ) {
+    if (query.namespace && !canAccessNamespace(access, query.namespace))
+      return Promise.resolve({ items: [], total: 0 });
+    return this.storage.listDocuments({
+      ...query,
+      namespaces: access === '*' ? undefined : [...access],
+    });
   }
 
-  async listChunks(id: string, limit: number, offset: number) {
-    await this.get(id);
+  async listChunks(
+    id: string,
+    access: NamespaceAccess,
+    limit: number,
+    offset: number,
+  ) {
+    await this.get(id, access);
     return this.storage.listChunks(id, limit, offset);
   }
 
-  async delete(id: string): Promise<void> {
-    const document = await this.get(id);
+  async delete(id: string, access: NamespaceAccess): Promise<void> {
+    const document = await this.get(id, access);
     if (
       document.status === IngestionStatus.Processing &&
       !this.isStale(document)
@@ -119,9 +148,8 @@ export class DocumentsService {
     });
   }
 
+  /** A PROCESSING document whose lease expired belongs to a dead worker. */
   isStale(document: DocumentRecord): boolean {
-    return (
-      Date.now() - document.updatedAt.getTime() > this.config.processingStaleMs
-    );
+    return !document.leaseUntil || document.leaseUntil.getTime() < Date.now();
   }
 }

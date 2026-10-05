@@ -1,0 +1,48 @@
+[
+  { "id": "sem-01", "category": "semantic", "query": "¿Cuántos días de vacaciones tiene un colaborador al año?", "expect_found": true, "expected": [{ "document": "politicas-internas.pdf", "contains": "quince días hábiles" }] },
+  { "id": "sem-02", "category": "semantic", "query": "cómo se escalan los incidentes críticos", "expect_found": true, "expected": [{ "document": "manual-soporte.md", "contains": "ingeniero de guardia" }] },
+  { "id": "sem-03", "category": "semantic", "query": "requisitos de seguridad para los portátiles corporativos", "expect_found": true, "expected": [{ "document": "politicas-internas.pdf", "contains": "cifrado de disco" }] },
+  { "id": "sem-04", "category": "semantic", "query": "cuánto es el viático para viajes internacionales", "expect_found": true, "expected": [{ "document": "politicas-internas.pdf", "contains": "120 dólares" }] },
+  { "id": "sem-05", "category": "semantic", "query": "qué horario tiene la mesa de ayuda", "expect_found": true, "expected": [{ "document": "manual-soporte.md", "contains": "lunes a viernes" }] },
+  { "id": "sem-06", "category": "semantic", "query": "quién aprueba las compras grandes", "expect_found": true, "expected": [{ "document": "politicas-internas.pdf", "contains": "comité" }] },
+  { "id": "sem-07", "category": "semantic", "query": "qué hacer con un correo sospechoso de phishing", "expect_found": true, "expected": [{ "document": "politicas-internas.pdf", "contains": "mesa de seguridad" }] },
+  { "id": "sem-08", "category": "semantic", "query": "copias de seguridad de los servidores de producción", "expect_found": true, "expected": [{ "document": "manual-soporte.md", "contains": "copias de seguridad diarias" }] },
+
+  { "id": "id-01", "category": "id", "query": "factura FV-2025-00088", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "FV-2025-00088" }] },
+  { "id": "id-02", "category": "id", "query": "¿Cuál es el estado de la factura FV-2025-00042?", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "FV-2025-00042" }] },
+  { "id": "id-03", "category": "id", "query": "FV-2025-00115", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "FV-2025-00115" }] },
+  { "id": "id-04", "category": "id", "query": "valor de la factura FV-2025-00007", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "FV-2025-00007" }] },
+  { "id": "id-05", "category": "id", "query": "contrato CT-2024-118", "expect_found": true, "expected": [{ "document": "contratos.json", "contains": "CT-2024-118" }] },
+  { "id": "id-06", "category": "id", "query": "proveedor del contrato CT-2024-104", "expect_found": true, "expected": [{ "document": "contratos.json", "contains": "CT-2024-104" }] },
+
+  { "id": "code-01", "category": "code", "query": "qué significa el error ERR-4031", "expect_found": true, "expected": [{ "document": "manual-soporte.md", "contains": "ERR-4031" }] },
+  { "id": "code-02", "category": "code", "query": "ERR-7710", "expect_found": true, "expected": [{ "document": "manual-soporte.md", "contains": "ERR-7710" }] },
+  { "id": "code-03", "category": "code", "query": "factura fv 2025 00061", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "FV-2025-00061" }] },
+  { "id": "code-04", "category": "code", "query": "FV202500030", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "FV-2025-00030" }] },
+  { "id": "code-05", "category": "code", "query": "facturas del NIT 900.123.456", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "900123456" }] },
+
+  { "id": "num-01", "category": "number", "query": "factura por valor de 4872000", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "4872000" }] },
+  { "id": "num-02", "category": "number", "query": "empleado con cédula 1020346423", "expect_found": true, "expected": [{ "document": "empleados.xlsx", "contains": "1020346423" }] },
+  { "id": "num-03", "category": "number", "query": "contrato por 41250000 pesos", "expect_found": true, "expected": [{ "document": "contratos.json", "contains": "41250000" }] },
+  { "id": "num-04", "category": "number", "query": "cédula 1020324997", "expect_found": true, "expected": [{ "document": "empleados.xlsx", "contains": "1020324997" }] },
+
+  { "id": "date-01", "category": "date", "query": "factura emitida el 2025-06-26", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "2025-06-26" }] },
+  { "id": "date-02", "category": "date", "query": "facturas del 2025-03-26", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "2025-03-26" }] },
+  { "id": "date-03", "category": "date", "query": "empleado que ingresó el 2019-02-14", "expect_found": true, "expected": [{ "document": "empleados.xlsx", "contains": "2019-02-14" }] },
+  { "id": "date-04", "category": "date", "query": "facturas con fecha 2025-08-19", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "2025-08-19" }] },
+
+  { "id": "name-01", "category": "name", "query": "¿Qué cargo tiene Mateo Giraldo?", "expect_found": true, "expected": [{ "document": "empleados.xlsx", "contains": "Mateo Giraldo" }] },
+  { "id": "name-02", "category": "name", "query": "Natalia Rendón", "expect_found": true, "expected": [{ "document": "empleados.xlsx", "contains": "Natalia Rendón" }] },
+  { "id": "name-03", "category": "name", "query": "facturas del cliente Logística Caribe", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "Logística Caribe" }] },
+  { "id": "name-04", "category": "name", "query": "contratos con Vigilancia Total", "expect_found": true, "expected": [{ "document": "contratos.json", "contains": "Vigilancia Total" }] },
+  { "id": "name-05", "category": "name", "query": "en qué área trabaja Felipe Arango", "expect_found": true, "expected": [{ "document": "empleados.xlsx", "contains": "Felipe Arango" }] },
+  { "id": "name-06", "category": "name", "query": "Clínica San Rafael", "expect_found": true, "expected": [{ "document": "facturas-2025.xlsx", "contains": "Clínica San Rafael" }] },
+
+  { "id": "neg-01", "category": "negative", "query": "receta tradicional de pastel de chocolate", "expect_found": false },
+  { "id": "neg-02", "category": "negative", "query": "factura FV-2099-99999", "expect_found": false },
+  { "id": "neg-03", "category": "negative", "query": "contrato CT-1999-001", "expect_found": false },
+  { "id": "neg-04", "category": "negative", "query": "¿Qué cargo tiene Zacarías Piedrahíta?", "expect_found": false },
+  { "id": "neg-05", "category": "negative", "query": "política de mascotas en la oficina", "expect_found": false },
+  { "id": "neg-06", "category": "negative", "query": "empleado con cédula 5559998887", "expect_found": false },
+  { "id": "leak-01", "category": "leak", "query": "salario de Mariana Restrepo", "forbidden": "9800000", "note": "salary only exists in a hidden sheet: it must never be returned" }
+]

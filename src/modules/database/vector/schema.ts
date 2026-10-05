@@ -3,9 +3,16 @@
  *
  * - rag_source_documents: one row per uploaded file (document + system metadata,
  *   original bytes so ingestion can be re-run, status for idempotency).
- * - rag_document_chunks: retrievable pieces with chunk metadata and vectors.
- *   Rows are only written inside the transaction that marks the document
- *   COMPLETED, so a partially processed document never becomes searchable.
+ * - rag_document_chunks: retrievable pieces with chunk metadata, vectors and a
+ *   full-text vector (search_tsv). Rows are only written inside the
+ *   transaction that marks the document COMPLETED, so a partially processed
+ *   document never becomes searchable.
+ *
+ * rag_source_documents doubles as the ingestion queue (status QUEUED, lease,
+ * run_id fencing token, attempts): no broker is needed for this volume.
+ *
+ * Statements are idempotent and also upgrade databases created by earlier
+ * versions (ALTER ... IF NOT EXISTS), so startup is the migration.
  *
  * The legacy `rag_documents` table (chunks without a parent document) is not
  * used anymore; its rows cannot be traced back to a document.
@@ -28,7 +35,7 @@ export function buildSchemaSql(dimensions: number): string[] {
       file_content bytea not null,
       metadata jsonb not null default '{}'::jsonb,
       tags text[] not null default '{}',
-      status text not null check (status in ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
+      status text not null check (status in ('PENDING', 'QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED')),
       stage text,
       progress jsonb not null default '{}'::jsonb,
       error jsonb,
@@ -42,6 +49,23 @@ export function buildSchemaSql(dimensions: number): string[] {
       updated_at timestamptz not null default now(),
       constraint rag_source_documents_namespace_hash_key unique (namespace, content_hash)
     )`,
+    // --- ingestion queue (added in 0.3; ADD COLUMN IF NOT EXISTS upgrades old tables)
+    'alter table rag_source_documents add column if not exists attempts integer not null default 0',
+    'alter table rag_source_documents add column if not exists run_id uuid',
+    'alter table rag_source_documents add column if not exists lease_until timestamptz',
+    'alter table rag_source_documents add column if not exists available_at timestamptz',
+    'alter table rag_source_documents add column if not exists ingest_options jsonb',
+    `do $$ begin
+      if exists (select 1 from pg_constraint
+                 where conname = 'rag_source_documents_status_check'
+                   and pg_get_constraintdef(oid) not like '%QUEUED%') then
+        alter table rag_source_documents drop constraint rag_source_documents_status_check;
+        alter table rag_source_documents add constraint rag_source_documents_status_check
+          check (status in ('PENDING', 'QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'));
+      end if;
+    end $$`,
+    `create index if not exists rag_source_documents_queue_idx on rag_source_documents (available_at)
+      where status in ('QUEUED', 'PROCESSING')`,
     'create index if not exists rag_source_documents_namespace_status_idx on rag_source_documents (namespace, status, created_at desc)',
     'create index if not exists rag_source_documents_metadata_idx on rag_source_documents using gin (metadata)',
     'create index if not exists rag_source_documents_tags_idx on rag_source_documents using gin (tags)',
@@ -67,5 +91,11 @@ export function buildSchemaSql(dimensions: number): string[] {
     // HNSW works with incremental inserts; IVFFlat built on an empty table
     // (the previous setup) degrades recall badly.
     'create index if not exists rag_document_chunks_embedding_hnsw_idx on rag_document_chunks using hnsw (embedding vector_cosine_ops)',
+    // Full-text side of hybrid search. Text is normalised in the application
+    // (lexical.ts: accents folded, identifiers compacted) and indexed with the
+    // language-neutral 'simple' config, so no extension is required. Rows
+    // ingested before this column existed match lexically after re-ingestion.
+    'alter table rag_document_chunks add column if not exists search_tsv tsvector',
+    'create index if not exists rag_document_chunks_search_tsv_idx on rag_document_chunks using gin (search_tsv)',
   ];
 }

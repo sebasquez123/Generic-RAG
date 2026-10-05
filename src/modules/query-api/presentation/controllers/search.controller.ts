@@ -6,7 +6,15 @@ import {
   Post,
   UseFilters,
 } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiResponse,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentPrincipal, RequireScope } from '~/shared/auth/api-key.guard';
+import type { Principal } from '~/shared/auth/principal';
 import { DomainExceptionFilter } from '~/shared/filters/domain-exception.filter';
 import { parseOrThrow } from '~/shared/validation/parse-or-throw';
 import { QueryService } from '../../application/services/query.service';
@@ -15,18 +23,20 @@ import { searchSchema } from '../validators/search.schema';
 
 /** Retrieval API consumed by external LLM servers. It never generates answers. */
 @ApiTags('Retrieval')
+@ApiSecurity('api-key')
 @Controller('search')
 @UseFilters(DomainExceptionFilter)
 export class SearchController {
   constructor(private readonly queryService: QueryService) {}
 
   @Post()
+  @RequireScope('search')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Semantic search over ingested documents',
     description:
-      'Returns only chunks above min_score (never padded to top_k), each with content, score, citation and ' +
-      'document/chunk metadata. found=false means there is no sufficient evidence.',
+      'Returns qualifying evidence only (never padded to top_k): content, citation, source/version, signals. ' +
+      'verdict.status tells sufficient | partial | weak | none; coverage tells what could not be searched.',
   })
   @ApiBody({
     schema: {
@@ -38,6 +48,12 @@ export class SearchController {
         min_score: { type: 'number', example: 0.6 },
         namespace: { type: 'string', example: 'default' },
         order_by: { type: 'string', enum: ['score', 'document'] },
+        mode: {
+          type: 'string',
+          enum: ['hybrid', 'vector'],
+          description:
+            'hybrid (default): vector + full-text, exact ids/codes/numbers can qualify; vector: similarity only',
+        },
         filters: {
           type: 'object',
           properties: {
@@ -62,15 +78,23 @@ export class SearchController {
     status: 200,
     description: 'Search results (possibly empty with found=false)',
   })
-  @ApiResponse({ status: 502, description: 'Embedding provider failure' })
-  async search(@Body() body: unknown) {
+  @ApiResponse({
+    status: 503,
+    description: 'Embedding provider unavailable (retryable: true)',
+  })
+  async search(
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+  ) {
     const input = parseOrThrow(searchSchema, body ?? {});
     const outcome = await this.queryService.search({
       query: input.query,
       namespace: input.namespace,
+      access: principal.namespaces,
       topK: input.top_k,
       minScore: input.min_score,
       orderBy: input.order_by,
+      mode: input.mode,
       filters: {
         documentIds: input.filters?.document_ids,
         documentTypes: input.filters?.document_types,

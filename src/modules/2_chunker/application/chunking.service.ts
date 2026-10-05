@@ -24,7 +24,7 @@ import { InvalidChunkingOptionsError } from '../domain/error/domain_errors';
  * Bump whenever chunk boundaries, chunk rendering or the embedding input
  * format change: documents chunked with another version need re-ingestion.
  */
-export const CHUNKING_VERSION = 'chunker-v1';
+export const CHUNKING_VERSION = 'chunker-v2';
 
 type Draft = Omit<ChunkDraft, 'chunkIndex' | 'contentHash'>;
 
@@ -190,6 +190,8 @@ export class ChunkingService {
       table_index: table.tableIndex,
       columns,
       header_source: table.headerSource,
+      // Lets retrieval tell when an answer rests on a slice of a larger table.
+      table_row_count: lines.length,
     };
 
     if (options.strategy === ChunkingStrategy.Recursive)

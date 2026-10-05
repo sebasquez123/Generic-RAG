@@ -17,6 +17,8 @@ export enum DocumentType {
 
 export enum IngestionStatus {
   Pending = 'PENDING',
+  /** Waiting for a worker (the documents table is the ingestion queue). */
+  Queued = 'QUEUED',
   Processing = 'PROCESSING',
   Completed = 'COMPLETED',
   Failed = 'FAILED',
@@ -129,6 +131,8 @@ export interface EmbeddingDescriptor {
 
 export interface EmbeddedChunk extends ChunkDraft {
   embedding: number[];
+  /** Normalised text for the full-text index (defaults to the content). */
+  searchText?: string;
 }
 
 // -------------------------------------------------------------- documents
@@ -166,6 +170,14 @@ export interface DocumentRecord {
   parserInfo: Record<string, unknown>;
   chunking?: ChunkingDescriptor;
   embedding?: EmbeddingDescriptor;
+  /** Worker claims of the current ingestion request (crashes included). */
+  attempts: number;
+  /** Fencing token of the run that currently owns the document. */
+  runId?: string;
+  /** The owning run must renew this; once expired, any worker may reclaim it. */
+  leaseUntil?: Date;
+  /** Chunking requested for the queued/running ingestion. */
+  requestedChunking?: ChunkingDescriptor;
   ingestionStartedAt?: Date;
   ingestedAt?: Date;
   createdAt: Date;
@@ -188,6 +200,8 @@ export interface NewDocument {
 
 export interface DocumentListQuery {
   namespace?: string;
+  /** Restricts the listing to these namespaces (API key scope). */
+  namespaces?: string[];
   status?: IngestionStatus;
   limit: number;
   offset: number;
@@ -235,6 +249,25 @@ export interface VectorSearchQuery {
   limit: number;
 }
 
+export interface CandidateSearchQuery extends VectorSearchQuery {
+  /**
+   * Normalised full-text terms (see lexical.ts). When present, chunks matching
+   * any of them are fetched too, so exact identifiers are not lost to vector
+   * ranking. Each candidate carries both its vector and lexical rank.
+   */
+  lexicalTerms?: string[];
+}
+
+/** What the namespace holds, so "no evidence" can be told apart from "not searched". */
+export interface SearchCoverage {
+  documentsTotal: number;
+  searchable: number;
+  pending: number;
+  inProgress: number;
+  failed: number;
+  requiresReindex: number;
+}
+
 export interface RetrievedContext {
   chunkId: string;
   documentId: string;
@@ -255,4 +288,11 @@ export interface RetrievedContext {
   createdAt: Date;
   /** Cosine similarity in [−1, 1]; higher is closer. */
   score: number;
+  /** Full-text rank (ts_rank_cd) when the chunk matched lexically. */
+  lexicalRank?: number;
+  /** Provenance of the parent document at retrieval time. */
+  documentHash: string;
+  ingestedAt?: Date;
+  chunkingVersion?: string;
+  embeddingVersion: string;
 }

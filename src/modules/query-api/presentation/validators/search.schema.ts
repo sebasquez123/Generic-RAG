@@ -11,6 +11,7 @@ export const searchSchema = z
     min_score: z.number().min(-1).max(1).optional(),
     namespace: namespaceSchema.optional(),
     order_by: z.enum(['score', 'document']).optional(),
+    mode: z.enum(['hybrid', 'vector']).optional(),
     filters: z
       .object({
         document_ids: z.array(z.string().uuid()).max(100).optional(),

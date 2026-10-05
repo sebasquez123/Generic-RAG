@@ -11,11 +11,14 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiConsumes,
+  ApiSecurity,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import config from '~/config';
+import { CurrentPrincipal, RequireScope } from '~/shared/auth/api-key.guard';
+import type { Principal } from '~/shared/auth/principal';
 import { DomainExceptionFilter } from '~/shared/filters/domain-exception.filter';
 import { DocumentType } from '~/shared/types/semantic-pipeline.type';
 import { DocumentsService } from '../../application/documents.service';
@@ -36,6 +39,7 @@ import { decodeFileName } from '../helpers/multipart';
  * They delegate to the same use cases as /documents; prefer that API.
  */
 @ApiTags('Ingestion (legacy)')
+@ApiSecurity('api-key')
 @Controller('ingestion')
 @UseFilters(DomainExceptionFilter)
 export class IngestionController {
@@ -45,6 +49,7 @@ export class IngestionController {
   ) {}
 
   @Get('lineup')
+  @RequireScope('read')
   @ApiOperation({ summary: 'Pipeline composition' })
   getLineup() {
     return {
@@ -56,12 +61,16 @@ export class IngestionController {
   }
 
   @Post('text')
+  @RequireScope('write')
   @ApiOperation({
     summary: 'Ingest plain text content (synchronous)',
     deprecated: true,
   })
   @ApiResponse({ status: 201, description: 'Document ingested (text)' })
-  ingestText(@Body() body: IngestTextDto) {
+  ingestText(
+    @Body() body: IngestTextDto,
+    @CurrentPrincipal() principal: Principal,
+  ) {
     const input = parseOrThrow(ingestTextSchema, body);
     const fileName = input.source.toLowerCase().endsWith('.md')
       ? input.source
@@ -74,16 +83,21 @@ export class IngestionController {
       },
       input.source,
       DocumentType.Txt,
+      principal,
     );
   }
 
   @Post('structured')
+  @RequireScope('write')
   @ApiOperation({
     summary: 'Ingest caller-shaped JSON data (synchronous)',
     deprecated: true,
   })
   @ApiResponse({ status: 201, description: 'Document ingested (structured)' })
-  ingestStructured(@Body() body: IngestStructuredDto) {
+  ingestStructured(
+    @Body() body: IngestStructuredDto,
+    @CurrentPrincipal() principal: Principal,
+  ) {
     const input = parseOrThrow(ingestStructuredSchema, body);
     const json =
       typeof input.data === 'string' ? input.data : JSON.stringify(input.data);
@@ -95,10 +109,12 @@ export class IngestionController {
       },
       input.source,
       DocumentType.Json,
+      principal,
     );
   }
 
   @Post('pdf')
+  @RequireScope('write')
   @ApiOperation({
     summary: 'Ingest PDF (multipart/form-data, synchronous)',
     deprecated: true,
@@ -111,6 +127,7 @@ export class IngestionController {
   ingestPdf(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: IngestPdfDto,
+    @CurrentPrincipal() principal: Principal,
   ) {
     if (!file?.buffer) throw new BadRequestException('file is required');
     const input = parseOrThrow(ingestPdfSchema, { source: body?.source });
@@ -122,6 +139,7 @@ export class IngestionController {
       },
       input.source,
       DocumentType.Pdf,
+      principal,
     );
   }
 
@@ -129,13 +147,15 @@ export class IngestionController {
     file: IngestionFileInput,
     source: string,
     documentType: DocumentType,
+    principal: Principal,
   ) {
     const { document } = await this.documents.register({
       file,
       source,
       documentType,
+      access: principal.namespaces,
     });
-    const result = await this.ingestion.start(document.id, { wait: true });
+    const result = await this.ingestion.start(document, { wait: true });
     return toDocumentResponse(
       result.document,
       this.ingestion.requiresReindex(result.document),

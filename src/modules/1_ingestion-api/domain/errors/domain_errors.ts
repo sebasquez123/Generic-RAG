@@ -5,11 +5,14 @@ export enum DomainErrorCodes {
   INVALID_DOCUMENT = 'INVALID_DOCUMENT',
   DOCUMENT_NOT_FOUND = 'DOCUMENT_NOT_FOUND',
   DOCUMENT_BUSY = 'DOCUMENT_BUSY',
+  INGESTION_QUEUE_FULL = 'INGESTION_QUEUE_FULL',
   PDF_NO_TEXT = 'PDF_NO_TEXT',
   PDF_ENCRYPTED = 'PDF_ENCRYPTED',
   PDF_INVALID = 'PDF_INVALID',
   XLSX_INVALID = 'XLSX_INVALID',
   XLSX_EMPTY = 'XLSX_EMPTY',
+  XLSX_TOO_LARGE = 'XLSX_TOO_LARGE',
+  PDF_TOO_LARGE = 'PDF_TOO_LARGE',
   TEXT_EMPTY = 'TEXT_EMPTY',
   JSON_INVALID = 'JSON_INVALID',
   NO_CHUNKS = 'NO_CHUNKS',
@@ -35,6 +38,11 @@ export class DocumentNotFoundError extends Error {
 
 export class DocumentBusyError extends Error {
   public readonly code = DomainErrorCodes.DOCUMENT_BUSY;
+}
+
+/** Backpressure: too many documents waiting for a worker. Retryable (429). */
+export class IngestionQueueFullError extends Error {
+  public readonly code = DomainErrorCodes.INGESTION_QUEUE_FULL;
 }
 
 /** Content-level failure raised by a parser (the file is valid but unusable). */

@@ -5,6 +5,8 @@
   "version": "0.2.1",
   "scripts": {
     "build": "nest build",
+    "apikey": "node scripts/generate-api-key.mjs",
+    "eval": "ts-node -r tsconfig-paths/register --transpile-only eval/run-eval.ts",
     "build:email": "email build --dir=./src/modules/sendgrid/templates",
     "cli": "ts-node -r tsconfig-paths/register src/cli/index.ts",
     "eslint": "eslint \"{src,tests}/**/*.{ts,tsx}\"",
@@ -63,6 +65,8 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-pgvector": "^0.0.9",
     "@nestjs/cli": "^11.0.21",
     "@nestjs/testing": "^11.1.24",
     "@types/axios": "^0.14.0",

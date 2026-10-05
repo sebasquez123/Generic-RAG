@@ -1,17 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  CandidateSearchQuery,
+  ChunkingDescriptor,
   DocumentListQuery,
   EmbeddedChunk,
   IngestionCompletion,
   IngestionError,
   IngestionProgress,
-  IngestionStage,
   NewDocument,
-  VectorSearchQuery,
+  SearchFilters,
 } from '~/shared/types/semantic-pipeline.type';
 import type {
   DocumentRegistryRepository,
   DocumentStorageRepository,
+  LeaseUpdate,
 } from '../ports/document-storage.repository';
 import {
   DOCUMENT_REGISTRY_REPOSITORY,
@@ -48,32 +50,66 @@ export class StorageService {
     return this.documents.delete(id);
   }
 
-  claimForProcessing(id: string, staleBefore: Date) {
-    return this.documents.claimForProcessing(id, staleBefore);
+  // ------------------------------------------------------ ingestion queue
+
+  enqueue(id: string, chunking: ChunkingDescriptor) {
+    return this.documents.enqueue(id, chunking);
   }
 
-  updateProgress(
+  countQueued() {
+    return this.documents.countQueued();
+  }
+
+  claimNext(runId: string, leaseMs: number, maxAttempts: number) {
+    return this.documents.claimNext(runId, leaseMs, maxAttempts);
+  }
+
+  failAbandoned(maxAttempts: number) {
+    return this.documents.failAbandoned(maxAttempts);
+  }
+
+  renewLease(id: string, runId: string, leaseMs: number, update?: LeaseUpdate) {
+    return this.documents.renewLease(id, runId, leaseMs, update);
+  }
+
+  requeue(id: string, runId: string, error: IngestionError, delayMs: number) {
+    return this.documents.requeue(id, runId, error, delayMs);
+  }
+
+  markFailed(
     id: string,
-    stage: IngestionStage,
+    runId: string,
+    error: IngestionError,
     progress: IngestionProgress,
   ) {
-    return this.documents.updateProgress(id, stage, progress);
-  }
-
-  markFailed(id: string, error: IngestionError, progress: IngestionProgress) {
-    return this.documents.markFailed(id, error, progress);
+    return this.documents.markFailed(id, runId, error, progress);
   }
 
   commitIngestion(
     documentId: string,
+    runId: string,
     chunks: EmbeddedChunk[],
     completion: IngestionCompletion,
   ) {
-    return this.chunks.commitIngestion(documentId, chunks, completion);
+    return this.chunks.commitIngestion(documentId, runId, chunks, completion);
   }
 
-  searchSimilarChunks(query: VectorSearchQuery) {
-    return this.chunks.searchSimilarChunks(query);
+  recordCompletedProgress(id: string, progress: IngestionProgress) {
+    return this.documents.recordCompletedProgress(id, progress);
+  }
+
+  // ------------------------------------------------------------ retrieval
+
+  searchCandidates(query: CandidateSearchQuery) {
+    return this.chunks.searchCandidates(query);
+  }
+
+  coverage(
+    namespace: string,
+    filters: SearchFilters,
+    embeddingVersion: string,
+  ) {
+    return this.documents.coverage(namespace, filters, embeddingVersion);
   }
 
   listChunks(documentId: string, limit: number, offset: number) {

@@ -3,6 +3,7 @@ import type { RagConfig } from '~/config';
 import { EmbeddingService } from '~/modules/4_embedding/application/embedding.service';
 import { StorageService } from '~/modules/7_storage/application/services/storage.service';
 import { RAG_CONFIG } from '~/shared/config/rag-config.module';
+import type { QueryTerms } from '~/shared/text/lexical';
 import type {
   RetrievedContext,
   SearchFilters,
@@ -13,9 +14,11 @@ export interface CandidateQuery {
   namespace: string;
   filters: SearchFilters;
   topK: number;
+  /** Normalised query terms; when given, full-text candidates are added. */
+  lexicalTerms?: QueryTerms;
 }
 
-/** Semantic candidate retrieval: query embedding + filtered vector search. */
+/** Candidate retrieval: query embedding + filtered vector (and full-text) search. */
 @Injectable()
 export class RetrievalService {
   constructor(
@@ -34,12 +37,21 @@ export class RetrievalService {
    */
   async retrieveCandidates(query: CandidateQuery): Promise<RetrievedContext[]> {
     const embedding = await this.embedding.embedQuery(query.text);
-    return this.storage.searchSimilarChunks({
+    return this.storage.searchCandidates({
       embedding,
       embeddingVersion: this.embedding.descriptor.version,
       namespace: query.namespace,
       filters: query.filters,
       limit: Math.min(query.topK * this.config.search.candidateMultiplier, 200),
+      lexicalTerms: query.lexicalTerms?.terms,
     });
+  }
+
+  coverage(namespace: string, filters: SearchFilters) {
+    return this.storage.coverage(
+      namespace,
+      filters,
+      this.embedding.descriptor.version,
+    );
   }
 }

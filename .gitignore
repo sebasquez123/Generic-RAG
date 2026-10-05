@@ -698,3 +698,6 @@ docs/cleanup/
 
 # Google Service Account
 service-account.json
+
+# Evaluation harness output
+eval/results/

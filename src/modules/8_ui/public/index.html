@@ -79,6 +79,8 @@
 <header>
   <h1>GenRag</h1>
   <span>Ingesta de documentos y prueba de recuperación · consume la API pública <code>/api/v1</code></span>
+  <label for="apiKey" style="margin-left:auto">API key</label>
+  <input id="apiKey" type="password" autocomplete="off" placeholder="grk_…" style="max-width:260px">
 </header>
 <main>
   <section>
@@ -313,8 +315,17 @@
   const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
   const detectType = (name) => ({ pdf: 'pdf', xlsx: 'xlsx', txt: 'txt', md: 'txt', markdown: 'txt', json: 'json' })[name.split('.').pop().toLowerCase()] ?? 'no soportado';
 
+  // The key only lives in this tab (sessionStorage), never in the page or the server.
+  const KEY_STORAGE = 'genrag.apiKey';
+  try { $('apiKey').value = sessionStorage.getItem(KEY_STORAGE) ?? ''; } catch { /* storage unavailable */ }
+  $('apiKey').addEventListener('change', () => {
+    try { sessionStorage.setItem(KEY_STORAGE, $('apiKey').value.trim()); } catch { /* storage unavailable */ }
+    loadDocuments();
+  });
+
   async function api(path, options = {}) {
-    const response = await fetch(API + path, options);
+    const headers = { ...(options.headers ?? {}), 'x-api-key': $('apiKey').value.trim() };
+    const response = await fetch(API + path, { ...options, headers });
     const text = await response.text();
     const body = text ? JSON.parse(text) : null;
     if (!response.ok) {
@@ -322,6 +333,7 @@
       const detail = body?.fieldErrors ? JSON.stringify(body.fieldErrors) : '';
       const error = new Error(`${response.status} · ${Array.isArray(message) ? message.join(', ') : message} ${detail}`.trim());
       error.status = response.status;
+      if (response.status === 401) error.message = '401 · Escribe una API key válida arriba a la derecha';
       throw error;
     }
     return body;
@@ -548,10 +560,14 @@
       const stats = response.retrieval;
       target.replaceChildren(
         el('div', { class: 'muted', style: 'margin-top:8px' },
-          `${response.results.length} resultados · ${stats.candidates} candidatos · ${stats.below_threshold} bajo el umbral ${stats.min_score} · ${stats.took_ms} ms`),
-        response.found ? null : el('div', { class: 'msg info' }, response.message),
+          `${response.results.length} resultados · ${stats.candidates} candidatos (${stats.lexical_candidates} por texto) · ${stats.below_threshold} bajo el umbral ${stats.min_score} · ${stats.took_ms} ms`),
+        el('div', { class: `msg ${response.verdict.status === 'sufficient' ? 'ok' : 'info'}` },
+          `Veredicto: ${response.verdict.status}${response.verdict.reasons.length ? ' (' + response.verdict.reasons.join(', ') + ')' : ''}` +
+          ` · buscables ${response.coverage.searchable}/${response.coverage.documents_total}`),
+        response.message ? el('div', { class: 'msg info' }, response.message) : null,
         ...response.results.map((result) => el('div', { class: 'chunk' },
-          el('header', {}, el('span', { class: 'score' }, `#${result.rank} · ${result.score}`), el('span', {}, result.citation)),
+          el('header', {}, el('span', { class: 'score' }, `#${result.rank} · ${result.score} · ${result.signals.strength}`), el('span', {}, result.citation)),
+          result.signals.matched_terms.length ? el('div', { class: 'muted' }, `Coincidencias: ${result.signals.matched_terms.join(', ')}`) : null,
           el('pre', {}, result.content))));
     } catch (error) {
       target.replaceChildren(el('div', { class: 'msg error' }, error.message));

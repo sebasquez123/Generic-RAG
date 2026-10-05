@@ -1,7 +1,7 @@
 FROM node:22.19.0-alpine AS builder
 
 RUN mkdir -p /opt/app/
-COPY package.json package-lock.json nest-cli.json .env.example tsconfig.json tsconfig.build.json /opt/app/
+COPY package.json package-lock.json .npmrc nest-cli.json .env.example tsconfig.json tsconfig.build.json /opt/app/
 WORKDIR /opt/app/
 
 RUN npm ci --ignore-scripts
@@ -16,7 +16,7 @@ ENV APP_PORT=8080 \
     NODE_OPTIONS="--enable-source-maps"
 EXPOSE 8080
 
-COPY package.json package-lock.json /opt/app/
+COPY package.json package-lock.json .npmrc /opt/app/
 WORKDIR /opt/app/
 RUN npm ci --omit=dev --ignore-scripts
 COPY .env.example /opt/app/

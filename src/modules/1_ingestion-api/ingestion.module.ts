@@ -8,6 +8,8 @@ import { XlsxIngestionAdapter } from './application/formats/adapters/structured/
 import { TextIngestionAdapter } from './application/formats/adapters/text/text-ingestion.adapter';
 import { DocumentsService } from './application/documents.service';
 import { DocumentIngestionService } from './application/orchestrator.service';
+import { IngestionPipeline } from './application/ingestion.pipeline';
+import { IngestionWorker } from './application/ingestion.worker';
 import { INGESTION_ADAPTERS } from './application/ports/ingestion-format.port';
 import { DocumentsController } from './presentation/controllers/documents.controller';
 import { IngestionController } from './presentation/controllers/ingestion.controller';
@@ -22,6 +24,8 @@ import { IngestionController } from './presentation/controllers/ingestion.contro
     TextIngestionAdapter,
     DocumentsService,
     DocumentIngestionService,
+    IngestionPipeline,
+    IngestionWorker,
     {
       provide: INGESTION_ADAPTERS,
       useFactory: (
@@ -38,6 +42,6 @@ import { IngestionController } from './presentation/controllers/ingestion.contro
       ],
     },
   ],
-  exports: [DocumentsService, DocumentIngestionService],
+  exports: [DocumentsService, DocumentIngestionService, IngestionWorker],
 })
 export class IngestionModule {}

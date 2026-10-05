@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { PDFParse } from 'pdf-parse';
+import defaults, { type RagConfig } from '~/config';
+import { RAG_CONFIG } from '~/shared/config/rag-config.module';
 import type {
   IngestionFileInput,
   IngestionFormatPort,
@@ -26,6 +28,11 @@ const PAGE_NUMBER_LINE =
 @Injectable()
 export class PdfIngestionAdapter implements IngestionFormatPort {
   readonly type = DocumentType.Pdf;
+  private readonly maxPages: number;
+
+  constructor(@Optional() @Inject(RAG_CONFIG) config?: RagConfig) {
+    this.maxPages = (config ?? defaults.rag).limits.pdfMaxPages;
+  }
 
   async parse(input: IngestionFileInput): Promise<ParsedDocument> {
     const { pages, info } = await this.extract(input.buffer);
@@ -82,13 +89,20 @@ export class PdfIngestionAdapter implements IngestionFormatPort {
   private async extract(buffer: Buffer) {
     const parser = new PDFParse({ data: new Uint8Array(buffer) });
     try {
-      const text = await parser.getText();
+      // Page count first: text extraction of a huge PDF is the expensive part.
       const details = await parser.getInfo().catch(() => undefined);
+      if (details && details.total > this.maxPages)
+        throw new DocumentParsingError(
+          DomainErrorCodes.PDF_TOO_LARGE,
+          `The PDF has ${details.total} pages (limit ${this.maxPages}, RAG_PDF_MAX_PAGES)`,
+        );
+      const text = await parser.getText();
       return {
         pages: text.pages,
         info: (details?.info ?? {}) as Record<string, unknown>,
       };
     } catch (error) {
+      if (error instanceof DocumentParsingError) throw error;
       const name = (error as Error)?.name ?? '';
       if (
         /password/i.test(name) ||

@@ -12,6 +12,34 @@ import { buildSchemaSql } from './schema';
 
 export type SqlExecutor = Pick<PoolClient, 'query'>;
 
+/** Schema bootstrap shared by the service and the PGlite-backed test database. */
+export async function bootstrapSchema(
+  db: Pick<SqlExecutor, 'query'>,
+  dimensions: number,
+): Promise<{ pgvector?: string; supportsIterativeScan: boolean }> {
+  for (const statement of buildSchemaSql(dimensions)) await db.query(statement);
+
+  const result = await db.query<{ dimensions: number }>(
+    `select atttypmod as dimensions from pg_attribute
+     where attrelid = 'rag_document_chunks'::regclass and attname = 'embedding'`,
+  );
+  const actual = result.rows[0]?.dimensions;
+  // A dimension change silently breaks similarity search, so refuse to start.
+  if (actual && actual !== dimensions)
+    throw new Error(
+      `rag_document_chunks.embedding is vector(${actual}) but RAG_EMBEDDING_DIMENSIONS=${dimensions}. ` +
+        'Re-create the table (and re-ingest) or restore the previous dimension.',
+    );
+
+  const version = await db.query<{ extversion: string }>(
+    "select extversion from pg_extension where extname = 'vector'",
+  );
+  const pgvector = version.rows[0]?.extversion;
+  const [major, minor] = (pgvector ?? '0.0').split('.').map(Number);
+  // pgvector >= 0.8 can keep scanning HNSW until filtered results fill LIMIT.
+  return { pgvector, supportsIterativeScan: major > 0 || minor >= 8 };
+}
+
 /** Connection concerns only: pool, schema bootstrap, transactions. */
 @Injectable()
 export class PgVectorConnectionService
@@ -19,7 +47,6 @@ export class PgVectorConnectionService
 {
   private readonly logger = new LoggerService(PgVectorConnectionService.name);
   private readonly pool?: Pool;
-  /** pgvector >= 0.8 can keep scanning HNSW until filtered results fill LIMIT. */
   supportsIterativeScan = false;
 
   constructor(@Inject(RAG_CONFIG) private readonly config: RagConfig) {
@@ -41,19 +68,13 @@ export class PgVectorConnectionService
         'Vector storage is not configured. Set RAG_VECTOR_DATABASE_URL or DB_HOST/DB_USER/DB_NAME.',
       );
 
-    for (const statement of buildSchemaSql(this.config.embedding.dimensions))
-      await this.pool.query(statement);
-
-    await this.assertEmbeddingDimensions();
-    const version = await this.pool.query<{ extversion: string }>(
-      "select extversion from pg_extension where extname = 'vector'",
+    const { pgvector, supportsIterativeScan } = await bootstrapSchema(
+      this.pool,
+      this.config.embedding.dimensions,
     );
-    const [major, minor] = (version.rows[0]?.extversion ?? '0.0')
-      .split('.')
-      .map(Number);
-    this.supportsIterativeScan = major > 0 || minor >= 8;
+    this.supportsIterativeScan = supportsIterativeScan;
     this.logger.event('Vector storage ready', {
-      pgvector: version.rows[0]?.extversion,
+      pgvector,
       dimensions: this.config.embedding.dimensions,
       iterativeScan: this.supportsIterativeScan,
     });
@@ -85,20 +106,5 @@ export class PgVectorConnectionService
   private requirePool(): Pool {
     if (!this.pool) throw new Error('Vector storage is not configured');
     return this.pool;
-  }
-
-  /** A dimension change silently breaks similarity search, so refuse to start. */
-  private async assertEmbeddingDimensions() {
-    const result = await this.requirePool().query<{ dimensions: number }>(
-      `select atttypmod as dimensions from pg_attribute
-       where attrelid = 'rag_document_chunks'::regclass and attname = 'embedding'`,
-    );
-    const actual = result.rows[0]?.dimensions;
-    const expected = this.config.embedding.dimensions;
-    if (actual && actual !== expected)
-      throw new Error(
-        `rag_document_chunks.embedding is vector(${actual}) but RAG_EMBEDDING_DIMENSIONS=${expected}. ` +
-          'Re-create the table (and re-ingest) or restore the previous dimension.',
-      );
   }
 }

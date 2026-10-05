@@ -1,38 +1,70 @@
-import type { LoggerService as LoggerServiceInterface } from '@nestjs/common';
 import type { BaseLogger, Level, LoggerOptions } from 'pino';
 import Pino, { stdSerializers } from 'pino';
 
 import config from '~/config';
 import { getTemporaryContext } from '~/shared/middleware/context/global-context';
 
-const localOptions: LoggerOptions = {
-  level: config.log.level,
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-      levelFirst: true,
-      ignore: 'serviceContext',
-      translateTime: 'SYS:HH:MM:ss.l',
-    },
-  },
-  serializers: {
-    err: stdSerializers.errWithCause,
-    error: stdSerializers.errWithCause,
-    exception: stdSerializers.errWithCause,
-  },
-  mixin: () => {
-    const requestContext = getTemporaryContext();
-    return {
-      httpRequest: requestContext?.httpRequest,
-      traceId: requestContext?.traceId,
-      route: requestContext?.route,
-      timestamp: requestContext?.startTime,
-    };
-  },
-};
+/**
+ * Second line of defence: request headers are never put in the log context,
+ * but any field with one of these names is censored wherever it appears.
+ */
+export const REDACTED_PATHS = [
+  'authorization',
+  'cookie',
+  'password',
+  'apiKey',
+  'api_key',
+  'key',
+  'token',
+  '["x-api-key"]',
+  '["x-goog-api-key"]',
+  '*.authorization',
+  '*.cookie',
+  '*.password',
+  '*.apiKey',
+  '*.api_key',
+  '*.key',
+  '*.token',
+  '*["x-api-key"]',
+  '*["x-goog-api-key"]',
+  '*.headers',
+  'headers',
+];
 
-const stdout = Pino(localOptions);
+export function buildLoggerOptions(pretty: boolean): LoggerOptions {
+  return {
+    level: config.log.level,
+    // Pretty output is for humans on a laptop; production gets one JSON object per line.
+    transport: pretty
+      ? {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            levelFirst: true,
+            ignore: 'serviceContext',
+            translateTime: 'SYS:HH:MM:ss.l',
+          },
+        }
+      : undefined,
+    redact: { paths: REDACTED_PATHS, censor: '[REDACTED]' },
+    serializers: {
+      err: stdSerializers.errWithCause,
+      error: stdSerializers.errWithCause,
+      exception: stdSerializers.errWithCause,
+    },
+    mixin: () => {
+      const requestContext = getTemporaryContext();
+      return {
+        httpRequest: requestContext?.httpRequest,
+        traceId: requestContext?.traceId,
+        route: requestContext?.route,
+        principal: requestContext?.principal,
+      };
+    },
+  };
+}
+
+const stdout = Pino(buildLoggerOptions(config.app.isDev));
 
 export const logger: Pick<BaseLogger, Level> = {
   trace: stdout.trace.bind(stdout),
